@@ -264,6 +264,28 @@ export async function GET(request) {
         .map((s) => s.sheet.title);
     }
 
+    // Helper with retry/backoff for quota errors
+    const getRowsWithRetry = async (sheet, maxRetries = 3, initialDelayMs = 600) => {
+      let attempt = 0;
+      let delayMs = initialDelayMs;
+      while (true) {
+        try {
+          return await sheet.getRows();
+        } catch (err) {
+          const is429 =
+            (err && err.status === 429) ||
+            (typeof err.message === "string" && err.message.includes("429"));
+          if (is429 && attempt < maxRetries) {
+            await new Promise((r) => setTimeout(r, delayMs));
+            attempt += 1;
+            delayMs *= 2; // exponential backoff
+            continue;
+          }
+          throw err;
+        }
+      }
+    };
+
     // load rows from target sheets
     let allRows = [];
     const processedSheets = [];
@@ -271,12 +293,24 @@ export async function GET(request) {
       const sheet = doc.sheetsByTitle[title];
       if (!sheet) continue;
       try {
-        const rows = await sheet.getRows();
+        const rows = await getRowsWithRetry(sheet);
         allRows.push(...rows);
         processedSheets.push({ title, rowCount: rows.length });
       } catch (err) {
-        console.error(`Error loading sheet ${title}:`, err);
+        if (
+          err &&
+          typeof err.message === "string" &&
+          err.message.includes("No values in the header row")
+        ) {
+          console.warn(
+            `Skipping sheet ${title}: missing header row (first row has no values).`
+          );
+        } else {
+          console.error(`Error loading sheet ${title}:`, err);
+        }
       }
+      // small delay between calls to respect per-minute quotas
+      await new Promise((r) => setTimeout(r, 200));
     }
 
     // fallback: if nothing matched and dateSheets exist, take most recent N
@@ -298,7 +332,17 @@ export async function GET(request) {
           allRows.push(...rows);
           processedSheets.push({ title, rowCount: rows.length });
         } catch (err) {
-          console.error(`Error loading fallback sheet ${title}:`, err);
+          if (
+            err &&
+            typeof err.message === "string" &&
+            err.message.includes("No values in the header row")
+          ) {
+            console.warn(
+              `Skipping fallback sheet ${title}: missing header row (first row has no values).`
+            );
+          } else {
+            console.error(`Error loading fallback sheet ${title}:`, err);
+          }
         }
       }
     }

@@ -192,25 +192,7 @@ export async function GET(request) {
     // Initialize Google Sheets
     const doc = await initializeGoogleSheets(spreadsheetId);
 
-    let targetDates = [];
-
-    if (specificDate) {
-      targetDates = [specificDate];
-    } else if (monthParam) {
-      // Generate all dates of the given month (YYYY-MM format)
-      const [year, month] = monthParam.split("-");
-      const daysInMonth = new Date(year, month, 0).getDate();
-
-      for (let d = 1; d <= daysInMonth; d++) {
-        const day = String(d).padStart(2, "0");
-        const formattedDate = `${day}-${month.padStart(2, "0")}-${year}`;
-        targetDates.push(formattedDate);
-      }
-    } else {
-      targetDates = getDateRange(parseInt(dateRange));
-    }
-
-    // Get all available sheets and filter by date pattern
+    // Get all available sheets FIRST to avoid unnecessary API calls
     const availableSheets = Object.values(doc.sheetsByTitle);
     const dateSheets = availableSheets.filter((sheet) => {
       const date = parseSheetDate(sheet.title);
@@ -224,43 +206,75 @@ export async function GET(request) {
       return dateB - dateA;
     });
 
-    let allRows = [];
-    let processedSheets = [];
+    let targetDates = [];
+    let sheetsToProcess = [];
 
-    // Process sheets based on target dates or available sheets
-    for (const targetDate of targetDates) {
-      const sheet = doc.sheetsByTitle[targetDate];
+    if (specificDate) {
+      // Only process if sheet exists
+      const sheet = doc.sheetsByTitle[specificDate];
       if (sheet) {
-        try {
-          const rows = await sheet.getRows();
-          allRows.push(...rows);
-          processedSheets.push({
-            date: targetDate,
-            rowCount: rows.length,
-          });
-        } catch (error) {
-          console.error(`Error loading sheet ${targetDate}:`, error);
-        }
+        sheetsToProcess = [sheet];
       }
+    } else if (monthParam) {
+      // Filter existing sheets by month instead of generating all possible dates
+      const [year, month] = monthParam.split("-");
+      sheetsToProcess = dateSheets.filter((sheet) => {
+        const sheetDate = parseSheetDate(sheet.title);
+        if (!sheetDate) return false;
+
+        return (
+          sheetDate.getFullYear() === parseInt(year) &&
+          sheetDate.getMonth() === parseInt(month) - 1
+        ); // Month is 0-indexed
+      });
+    } else {
+      // Use most recent available sheets up to dateRange limit
+      const limit = parseInt(dateRange);
+      sheetsToProcess = dateSheets.slice(0, Math.min(limit, dateSheets.length));
     }
 
-    // If no sheets found for target dates, use the most recent available sheets
-    if (allRows.length === 0 && dateSheets.length > 0) {
-      const sheetsToProcess = dateSheets.slice(
-        0,
-        Math.min(parseInt(dateRange), dateSheets.length)
-      );
+    let allRows = [];
+    let processedSheets = [];
+    let skippedSheets = [];
 
-      for (const sheet of sheetsToProcess) {
-        try {
-          const rows = await sheet.getRows();
+    // Process only existing sheets
+    for (const sheet of sheetsToProcess) {
+      try {
+        const rows = await sheet.getRows();
+
+        // Check if sheet has valid data (non-empty rows with required columns)
+        if (rows && rows.length > 0) {
           allRows.push(...rows);
           processedSheets.push({
             date: sheet.title,
             rowCount: rows.length,
           });
-        } catch (error) {
+        } else {
+          skippedSheets.push({
+            date: sheet.title,
+            reason: "No data rows found",
+          });
+        }
+      } catch (error) {
+        // Handle specific header row error
+        if (
+          error &&
+          typeof error.message === "string" &&
+          error.message.includes("No values in the header row")
+        ) {
+          console.warn(
+            `Skipping sheet ${sheet.title}: missing header row (first row has no values).`
+          );
+          skippedSheets.push({
+            date: sheet.title,
+            reason: "Missing header row",
+          });
+        } else {
           console.error(`Error loading sheet ${sheet.title}:`, error);
+          skippedSheets.push({
+            date: sheet.title,
+            reason: `Error: ${error.message}`,
+          });
         }
       }
     }
@@ -321,17 +335,26 @@ export async function GET(request) {
       ...stats,
       contacts,
       dateRange: {
-        requested: targetDates,
+        requested: monthParam
+          ? `Month: ${monthParam}`
+          : specificDate
+          ? `Date: ${specificDate}`
+          : `Last ${dateRange} days`,
         processed: processedSheets,
+        skipped: skippedSheets,
         available: availableSheetNames,
       },
       metadata: {
+        totalSheetsAvailable: dateSheets.length,
         totalSheetsProcessed: processedSheets.length,
+        totalSheetsSkipped: skippedSheets.length,
         totalRowsProcessed: allRows.length,
         uniqueContacts: uniqueRows.length,
         filteredContacts: contacts.length, // Only contacts with both name and number
         dateRange: specificDate
           ? `Specific date: ${specificDate}`
+          : monthParam
+          ? `Month: ${monthParam}`
           : `Last ${dateRange} days`,
       },
     });

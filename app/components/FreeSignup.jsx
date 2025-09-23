@@ -12,18 +12,39 @@ import {
   ComposedChart,
 } from "recharts";
 
-export default function SignupAnalyticsDashboard({ spreadsheetId }) {
+export default function SignupAnalyticsDashboard({
+  spreadsheetId,
+  defaultAssignee,
+  hideNavButtons,
+  month: controlledMonth,
+  onChangeMonth,
+  showAssigneeFilter = false,
+}) {
   const router = useRouter();
-  const [selectedAssignee, setSelectedAssignee] = useState("All");
-  const [selectedMonth, setSelectedMonth] = useState("2025-09");
+  const [selectedAssignee, setSelectedAssignee] = useState(
+    defaultAssignee || "All"
+  );
+  const [selectedMonth, setSelectedMonth] = useState(
+    controlledMonth || "2025-09"
+  );
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(null);
+  const [conversionStats, setConversionStats] = useState(null);
   const [error, setError] = useState(null);
   const [navigating, setNavigating] = useState(false);
 
   const SPREADSHEET_ID =
-    spreadsheetId || "1FsxidwIFtImv5JdVFZula6uFEKG9QKe9Q8Q8mOnuMdI";
+    spreadsheetId || "1rWrkTM6Mh0bkwUpk1VsF3ReGkOk-piIoHDeCobSDHKY";
+  const CONVERSION_SPREADSHEET_ID = "195gQV7QzJ-uoKzqGVapMdF5-zAWQyzuF_I8ffkNGc-o";
   const months = ["2025-09"];
+
+  // keep local month in sync if parent controls it
+  useEffect(() => {
+    if (controlledMonth && controlledMonth !== selectedMonth) {
+      setSelectedMonth(controlledMonth);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlledMonth]);
 
   // OPTIMIZED: Remove artificial delay and prefetch data
   const handleNavigateToWhatsApp = () => {
@@ -78,9 +99,7 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
 
   const languageColors = {
     English: "#a78bfa",
-    english: "#a78bfa",
     Hindi: "#fb923c",
-    hindi: "#fb923c",
     Marathi: "#f472b6",
     Bengali: "#22d3ee",
     Gujarati: "#34d399",
@@ -93,6 +112,31 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
     Assamese: "#a855f7",
     Urdu: "#ef4444",
     Other: "#9ca3af",
+  };
+
+  // Normalize language labels to canonical case-insensitive values
+  const normalizeLanguage = (lang) => {
+    if (!lang) return "Other";
+    const value = String(lang).trim().toLowerCase();
+    if (!value || value === "not selected" || value === "not provided") {
+      return "Other";
+    }
+    const map = {
+      english: "English",
+      hindi: "Hindi",
+      marathi: "Marathi",
+      bengali: "Bengali",
+      gujarati: "Gujarati",
+      telugu: "Telugu",
+      tamil: "Tamil",
+      kannada: "Kannada",
+      malayalam: "Malayalam",
+      punjabi: "Punjabi",
+      odia: "Odia",
+      assamese: "Assamese",
+      urdu: "Urdu",
+    };
+    return map[value] || "Other";
   };
 
   // OPTIMIZED: Longer cache duration (15 minutes instead of 5)
@@ -126,6 +170,21 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
     }
   };
 
+  // Helper function to normalize contact numbers
+  const normalizeContact = (contact) => {
+    if (!contact) return "";
+    const cleaned = contact.toString().replace(/[^0-9]/g, "");
+    // If starts with 91 and has 12 digits, remove 91
+    if (cleaned.startsWith("91") && cleaned.length === 12) {
+      return cleaned.substring(2);
+    }
+    // If has 10 digits, keep as is
+    if (cleaned.length === 10) {
+      return cleaned;
+    }
+    return cleaned;
+  };
+
   // OPTIMIZED: Fetch data with better error handling and immediate cache check
   useEffect(() => {
     if (!selectedMonth) return;
@@ -135,35 +194,70 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
     if (cachedStats) {
       setStats(cachedStats);
       setError(null);
-      return;
     }
 
+    // Read cached conversion data to avoid late sales rendering
+    try {
+      const convCacheRaw = localStorage.getItem("conversion-cache-v1");
+      if (convCacheRaw) {
+        const { data, timestamp } = JSON.parse(convCacheRaw);
+        const now = Date.now();
+        const ttl = 15 * 60 * 1000; // 15 minutes
+        if (now - timestamp < ttl) {
+          setConversionStats(data);
+        }
+      }
+    } catch {}
+
     // Only set loading if no cached data
-    setLoading(true);
+    if (!cachedStats) {
+      setLoading(true);
+    }
     setError(null);
 
     const controller = new AbortController();
 
     const fetchStats = async () => {
       try {
-        const url = new URL("/api/freesignupsheet", window.location.origin);
-        url.searchParams.set("spreadsheetId", SPREADSHEET_ID);
-        url.searchParams.set(
-          "monthYear",
-          selectedMonth.split("-")[1] + "-" + selectedMonth.split("-")[0]
-        );
+        // Fetch both freesignup and conversion data
+        const [freeSignupRes, conversionRes] = await Promise.all([
+          fetch(
+            new URL("/api/freesignupsheet", window.location.origin).toString() +
+            "?" +
+            new URLSearchParams({
+              spreadsheetId: SPREADSHEET_ID,
+              monthYear: selectedMonth.split("-")[1] + "-" + selectedMonth.split("-")[0],
+            }),
+            { signal: controller.signal }
+          ),
+          fetch(
+            new URL("/api/conversionsheet", window.location.origin).toString() +
+            "?" +
+            new URLSearchParams({
+              spreadsheetId: CONVERSION_SPREADSHEET_ID,
+            }),
+            { signal: controller.signal }
+          ),
+        ]);
 
-        const res = await fetch(url.toString(), {
-          signal: controller.signal,
-          // Add timeout to prevent hanging
-          timeout: 10000,
-        });
+        if (!freeSignupRes.ok) throw new Error(`FreeSignup API error ${freeSignupRes.status}`);
+        if (!conversionRes.ok) throw new Error(`Conversion API error ${conversionRes.status}`);
 
-        if (!res.ok) throw new Error(`API error ${res.status}`);
-        const data = await res.json();
+        const [freeSignupData, conversionData] = await Promise.all([
+          freeSignupRes.json(),
+          conversionRes.json(),
+        ]);
 
-        cacheData(selectedMonth, data);
-        setStats(data);
+        cacheData(selectedMonth, freeSignupData);
+        setStats(freeSignupData);
+        setConversionStats(conversionData);
+        // Cache conversion data
+        try {
+          localStorage.setItem(
+            "conversion-cache-v1",
+            JSON.stringify({ data: conversionData, timestamp: Date.now() })
+          );
+        } catch {}
         setError(null);
       } catch (err) {
         if (err.name !== "AbortError") {
@@ -177,7 +271,7 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
 
     fetchStats();
     return () => controller.abort();
-  }, [selectedMonth, SPREADSHEET_ID]);
+  }, [selectedMonth, SPREADSHEET_ID, CONVERSION_SPREADSHEET_ID]);
 
   // Process data from API response
   const processedData = useMemo(() => {
@@ -193,16 +287,92 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
 
     const totalContacts = filteredContacts.length;
 
-    const demoRequested = filteredContacts.filter(
-      (contact) =>
-        (contact.demoStatus &&
-          contact.demoStatus.toLowerCase().includes("scheduled")) ||
-        contact.demoStatus.toLowerCase().includes("completed")
-    ).length;
+    // For free signup, everyone accepts demo and completes it
+    const demoRequested = totalContacts;
+    const demoCompleted = totalContacts;
+    const demoDeclined = 0;
 
-    const demoNo = totalContacts - demoRequested;
+    // Calculate sales by matching with conversion data
+    let salesCount = 0;
+    let salesByAssignee = {};
+    const salesByDate = {};
+    const seenSaleKeys = new Set();
+
+    if (conversionStats && conversionStats.data) {
+      // Create lookup maps for faster matching
+      const freeSignupByEmail = new Map();
+      const freeSignupByContact = new Map();
+
+      filteredContacts.forEach((contact) => {
+        if (contact.email) {
+          freeSignupByEmail.set(contact.email.toLowerCase().trim(), contact);
+        }
+        if (contact.phone) {
+          const normalizedPhone = normalizeContact(contact.phone);
+          if (normalizedPhone) {
+            freeSignupByContact.set(normalizedPhone, contact);
+          }
+        }
+      });
+
+      // Match conversion data with free signup data
+      conversionStats.data.forEach((sale) => {
+        let matchedContact = null;
+
+        // Try email match first
+        if (sale.email) {
+          matchedContact = freeSignupByEmail.get(sale.email.toLowerCase().trim());
+        }
+
+        // Try contact match if email didn't work
+        if (!matchedContact && sale.contact) {
+          const normalizedSaleContact = normalizeContact(sale.contact);
+          if (normalizedSaleContact) {
+            matchedContact = freeSignupByContact.get(normalizedSaleContact);
+          }
+        }
+
+        if (matchedContact) {
+          // prevent double counting same contact if multiple sale rows match
+          const uniqueKey =
+            (matchedContact.email && matchedContact.email.toLowerCase().trim()) ||
+            (matchedContact.phone && normalizeContact(matchedContact.phone)) ||
+            Math.random().toString(36);
+          if (!seenSaleKeys.has(uniqueKey)) {
+            seenSaleKeys.add(uniqueKey);
+            salesCount++;
+            const assignee = matchedContact.assignedTo || "Unassigned";
+            salesByAssignee[assignee] = (salesByAssignee[assignee] || 0) + 1;
+            // Per-day sales attribution based on contact signup day
+            const d = new Date(matchedContact.timestamp);
+            const day = d.getDate();
+            salesByDate[day] = (salesByDate[day] || 0) + 1;
+            // Debug log for sales attribution
+            console.log("[FreeSignup] Matched sale:", {
+              sale,
+              matchedContact: {
+                name: matchedContact.name,
+                email: matchedContact.email,
+                phone: matchedContact.phone,
+                assignedTo: matchedContact.assignedTo,
+              },
+              attributedTo: assignee,
+              day,
+            });
+          }
+        }
+      });
+    }
+
+    // Calculate assigned/unassigned counts
+    const assignedContacts = filteredContacts.filter(
+      (contact) => contact.assignedTo && contact.assignedTo.trim() !== ""
+    ).length;
+    const unassignedContacts = totalContacts - assignedContacts;
+
+    // Conversion rate = Sales / Total Contacts (%), rounded
     const conversionRate =
-      totalContacts > 0 ? Math.round((demoRequested / totalContacts) * 100) : 0;
+      totalContacts > 0 ? Math.round((salesCount / totalContacts) * 100) : 0;
 
     const languageCount = {};
     const contactsByDate = {};
@@ -232,16 +402,8 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
         contactsByDate[day].demoNo += 1;
       }
 
-      let language = contact.language || "";
-
-      if (
-        language === "Not Selected" ||
-        language === "Not provided" ||
-        language.trim() === "" ||
-        !language
-      ) {
-        language = "Other";
-      }
+      // Normalize language value to avoid case-sensitive duplicates
+      let language = normalizeLanguage(contact.language);
 
       if (!languageCount[language]) {
         languageCount[language] = 0;
@@ -266,10 +428,13 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
       .map((day) => {
         const processedDay = {
           ...day,
+          // Sales conversion rate per day = salesForDay / totalContacts
           conversionRate:
             day.totalContacts > 0
-              ? (day.demoRequested / day.totalContacts) * 100
+              ? ((salesByDate[day.day] || 0) / day.totalContacts) * 100
               : 0,
+          // show demoCompleted for chart parity
+          demoCompleted: day.totalContacts,
         };
 
         Object.keys(sortedLanguages).forEach((lang) => {
@@ -299,7 +464,13 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
     return {
       totalContacts,
       demoRequested,
-      demoNo,
+      demoCompleted,
+      demoDeclined,
+      demoNo: demoDeclined, // Keep for backward compatibility
+      salesCount,
+      salesByAssignee,
+      assignedContacts,
+      unassignedContacts,
       languages: sortedLanguages,
       boards: boardCount,
       grades: gradeCount,
@@ -311,52 +482,31 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
       ),
       avgDailyDemos: Math.round(demoRequested / Math.max(dailyData.length, 1)),
     };
-  }, [stats, selectedAssignee]);
+  }, [stats, selectedAssignee, conversionStats]);
 
   // Get unique assignees from data
   const assignees = useMemo(() => {
-    if (!stats || !stats.contacts) return ["All"];
+    if (!stats || !stats.contacts)
+      return ["All", selectedAssignee].filter(Boolean);
     const uniqueAssignees = [
       ...new Set(stats.contacts.map((c) => c.assignedTo).filter(Boolean)),
     ];
+    // Ensure the current selection is present as an option
+    if (
+      selectedAssignee &&
+      selectedAssignee !== "All" &&
+      !uniqueAssignees.includes(selectedAssignee)
+    ) {
+      uniqueAssignees.push(selectedAssignee);
+    }
     return ["All", ...uniqueAssignees.sort()];
-  }, [stats]);
+  }, [stats, selectedAssignee]);
 
-  const StatCard = ({
-    title,
-    value,
-    prevValue,
-    prevChange,
-    goal,
-    goalChange,
-  }) => (
+  const StatCard = ({ title, value }) => (
     <div className="bg-white text-gray-800 p-4 rounded-lg shadow-lg border border-gray-200">
       <h3 className="text-lg font-semibold mb-2">{title}</h3>
       <div className="text-3xl font-bold mb-2">
         {typeof value === "number" ? value.toLocaleString() : value}
-      </div>
-      <div className="flex justify-between text-sm text-gray-600">
-        <div>
-          <div>
-            PREVIOUS:{" "}
-            {typeof prevValue === "string"
-              ? prevValue
-              : prevValue?.toLocaleString()}
-          </div>
-          <div className="text-xs">
-            GOAL: {typeof goal === "string" ? goal : goal?.toLocaleString()}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className={prevChange >= 0 ? "text-green-600" : "text-red-600"}>
-            {prevChange >= 0 ? "+" : ""}
-            {prevChange}%
-          </div>
-          <div className={goalChange >= 0 ? "text-green-600" : "text-red-600"}>
-            {goalChange >= 0 ? "+" : ""}
-            {goalChange}%
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -376,7 +526,7 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
       return (
         <div className="relative">
           <div className="absolute top-4 right-4 z-10">
-            <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent bg-white rounded-full shadow-lg"></div>
+            <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent bg-white shadow-lg"></div>
           </div>
         </div>
       );
@@ -391,7 +541,7 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
 
   if (loading && !stats) return <LoadingState />;
   if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
-  if (!processedData) return <div className="p-6">No data available</div>;
+  if (!processedData) return <div className="p-6">Loading...</div>;
 
   const topLanguages = Object.entries(processedData.languages).slice(0, 3);
 
@@ -399,54 +549,62 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
     <div className="p-6 bg-gray-100 min-h-screen">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <button
-            onClick={handleNavigateToWhatsApp}
-            disabled={navigating}
-            className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg shadow-lg transition-all duration-200 flex items-center gap-2 text-sm"
-          >
-            {navigating ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                <span>Opening...</span>
-              </>
-            ) : (
-              <>
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 19l-7-7 7-7"
-                  />
-                </svg>
-                <span>WhatsApp Dashboard</span>
-              </>
-            )}
-          </button>
+          {!hideNavButtons && (
+            <button
+              onClick={handleNavigateToWhatsApp}
+              disabled={navigating}
+              className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg shadow-lg transition-all duration-200 flex items-center gap-2 text-sm"
+            >
+              {navigating ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                  <span>Opening...</span>
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 19l-7-7 7-7"
+                    />
+                  </svg>
+                  <span>WhatsApp Dashboard</span>
+                </>
+              )}
+            </button>
+          )}
           <h1 className="text-2xl font-bold text-gray-800">
             FREE SIGNUP ANALYTICS DASHBOARD
           </h1>
         </div>
         <div className="flex gap-4">
-          <select
-            value={selectedAssignee}
-            onChange={(e) => setSelectedAssignee(e.target.value)}
-            className="border px-3 py-2 rounded bg-white"
-          >
-            {assignees.map((assignee) => (
-              <option key={assignee} value={assignee}>
-                {assignee}
-              </option>
-            ))}
-          </select>
+          {showAssigneeFilter && (
+            <select
+              value={selectedAssignee}
+              onChange={(e) => setSelectedAssignee(e.target.value)}
+              className="border px-3 py-2 rounded bg-white"
+            >
+              {assignees.map((assignee) => (
+                <option key={assignee} value={assignee}>
+                  {assignee}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (onChangeMonth) onChangeMonth(val);
+              setSelectedMonth(val);
+            }}
             className="border px-3 py-2 rounded bg-white"
           >
             {months.map((m) => (
@@ -477,27 +635,30 @@ export default function SignupAnalyticsDashboard({ spreadsheetId }) {
             color="bg-blue-500"
           />
           <SimpleStatCard
-            title="DEMO REQUESTED"
-            value={`${processedData.demoRequested} (${processedData.conversionRate}%)`}
+            title="DEMO REQUEST"
+            value={processedData.demoRequested}
             color="bg-green-500"
           />
           <SimpleStatCard
+            title="DEMO COMPLETE"
+            value={processedData.demoCompleted}
+            color="bg-emerald-500"
+          />
+          <SimpleStatCard
             title="DEMO DECLINED"
-            value={`${processedData.demoNo} (${
-              100 - processedData.conversionRate
-            }%)`}
+            value={processedData.demoDeclined}
             color="bg-red-500"
           />
-          {topLanguages.map(([language, count]) => (
-            <SimpleStatCard
-              key={language}
-              title={`${language.toUpperCase()} USERS`}
-              value={`${count} (${Math.round(
-                (count / processedData.totalContacts) * 100
-              )}%)`}
-              color="bg-purple-500"
-            />
-          ))}
+          <SimpleStatCard
+            title="SALES"
+            value={processedData.salesCount}
+            color="bg-yellow-500"
+          />
+          <SimpleStatCard
+            title="ASSIGNED / UNASSIGNED"
+            value={`${processedData.assignedContacts} / ${processedData.unassignedContacts}`}
+            color="bg-purple-500"
+          />
         </div>
 
         {/* Main Content Grid */}

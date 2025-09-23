@@ -14,9 +14,14 @@ import {
   ComposedChart,
 } from "recharts";
 
-export default function WhatsAppDashboard({ fallbackSpreadsheetId }) {
+export default function WhatsAppDashboard({
+  fallbackSpreadsheetId,
+  hideNavButtons,
+  month: controlledMonth,
+  onChangeMonth,
+}) {
   const router = useRouter();
-  const [month, setMonth] = useState("2025-09");
+  const [month, setMonth] = useState(controlledMonth || "2025-09");
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
@@ -42,6 +47,14 @@ export default function WhatsAppDashboard({ fallbackSpreadsheetId }) {
   };
 
   const months = ["2025-06", "2025-07", "2025-08", "2025-09"];
+
+  // keep local month in sync if parent controls it
+  useEffect(() => {
+    if (controlledMonth && controlledMonth !== month) {
+      setMonth(controlledMonth);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlledMonth]);
 
   // OPTIMIZED: Remove artificial delay and prefetch data
   const handleNavigateToFreeSignup = () => {
@@ -277,41 +290,11 @@ export default function WhatsAppDashboard({ fallbackSpreadsheetId }) {
     };
   }, [stats]);
 
-  const StatCard = ({
-    title,
-    value,
-    prevValue,
-    prevChange,
-    goal,
-    goalChange,
-  }) => (
+  const StatCard = ({ title, value }) => (
     <div className="bg-white text-gray-800 p-4 rounded-lg shadow-lg border border-gray-200">
       <h3 className="text-lg font-semibold mb-2">{title}</h3>
-      <div className="text-3xl font-bold mb-2">
+      <div className="text-3xl font-bold">
         {typeof value === "number" ? value.toLocaleString() : value}
-      </div>
-      <div className="flex justify-between text-sm text-gray-600">
-        <div>
-          <div>
-            PREVIOUS:{" "}
-            {typeof prevValue === "string"
-              ? prevValue
-              : prevValue?.toLocaleString()}
-          </div>
-          <div className="text-xs">
-            GOAL: {typeof goal === "string" ? goal : goal?.toLocaleString()}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className={prevChange >= 0 ? "text-green-600" : "text-red-600"}>
-            {prevChange >= 0 ? "+" : ""}
-            {prevChange}%
-          </div>
-          <div className={goalChange >= 0 ? "text-green-600" : "text-red-600"}>
-            {goalChange >= 0 ? "+" : ""}
-            {goalChange}%
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -332,7 +315,7 @@ export default function WhatsAppDashboard({ fallbackSpreadsheetId }) {
       return (
         <div className="relative">
           <div className="absolute top-4 right-4 z-10">
-            <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent bg-white rounded-full shadow-lg"></div>
+            <div className="animate-spin rounded-full h-6 w-6 border-2 border-blue-500 border-t-transparent bg-white shadow-lg"></div>
           </div>
           <div className="opacity-75">
             {/* Render current data with reduced opacity */}
@@ -352,7 +335,7 @@ export default function WhatsAppDashboard({ fallbackSpreadsheetId }) {
 
   if (loading && !stats) return <LoadingState />;
   if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
-  if (!processedData) return <div className="p-6">No data available</div>;
+  if (!processedData) return <div className="p-6">Loading...</div>;
 
   const topLanguages = Object.entries(processedData.languages).slice(0, 6);
 
@@ -361,42 +344,48 @@ export default function WhatsAppDashboard({ fallbackSpreadsheetId }) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">
-            WHATSAPP BOT ANALYTICS DASHBOARD
+            DEPLOYH.AI PERFORMANCE DASHBOARD
           </h1>
         </div>
         <div className="flex items-center gap-4">
-          <button
-            onClick={handleNavigateToFreeSignup}
-            disabled={navigating}
-            className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg shadow-lg transition-all duration-200 flex items-center gap-2 text-sm"
-          >
-            {navigating ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                <span>Opening...</span>
-              </>
-            ) : (
-              <>
-                <span>Free Signup Dashboard</span>
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 5l7 7-7 7"
-                  />
-                </svg>
-              </>
-            )}
-          </button>
+          {!hideNavButtons && (
+            <button
+              onClick={handleNavigateToFreeSignup}
+              disabled={navigating}
+              className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg shadow-lg transition-all duration-200 flex items-center gap-2 text-sm"
+            >
+              {navigating ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                  <span>Opening...</span>
+                </>
+              ) : (
+                <>
+                  <span>Free Signup Dashboard</span>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
+                </>
+              )}
+            </button>
+          )}
           <select
             value={month}
-            onChange={(e) => setMonth(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (onChangeMonth) onChangeMonth(val);
+              setMonth(val);
+            }}
             className="border px-3 py-2 rounded bg-white"
           >
             {months.map((m) => (
@@ -411,9 +400,9 @@ export default function WhatsAppDashboard({ fallbackSpreadsheetId }) {
       {/* Show loading overlay when refreshing data */}
       <div className={`${loading && stats ? "relative" : ""}`}>
         {loading && stats && (
-          <div className="absolute top-0 right-0 z-10 bg-blue-50 px-3 py-1 rounded-bl-lg border-l border-b border-blue-200">
-            <div className="flex items-center gap-2 text-sm text-blue-600">
-              <div className="animate-spin rounded-full h-3 w-3 border-2 border-blue-500 border-t-transparent"></div>
+          <div className="absolute inset-0 z-10 bg-white/60 backdrop-blur-sm flex items-center justify-center">
+            <div className="flex items-center gap-3 text-sm text-blue-700 bg-blue-50 px-4 py-2 rounded-lg border border-blue-200 shadow transform -translate-y-20">
+              <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent"></div>
               <span>Updating...</span>
             </div>
           </div>
