@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
+import { getCache, setCache, makeCacheKey } from "../../../lib/serverCache";
 
 /* -------------------- Helpers -------------------- */
 
@@ -166,6 +167,18 @@ export async function GET(request) {
     const yearParam = searchParams.get("year"); // numeric year
     const monthYearParam = searchParams.get("monthYear"); // "MM-YYYY" or "M-YYYY"
     const debug = searchParams.get("debug") === "1";
+    const fieldsParam = searchParams.get("fields");
+    const fields = fieldsParam
+      ? fieldsParam
+          .split(",")
+          .map((f) => f.trim())
+          .filter(Boolean)
+      : null;
+    const cacheTtl = Math.max(0, parseInt(searchParams.get("cacheTtl") || "300", 10));
+    const sheetDelayMs = Math.max(0, parseInt(searchParams.get("sheetDelayMs") || "400", 10));
+    const maxRetries = Math.max(0, parseInt(searchParams.get("maxRetries") || "4", 10));
+    const initialDelayMs = Math.max(100, parseInt(searchParams.get("initialDelayMs") || "500", 10));
+    const jitterMs = Math.max(0, parseInt(searchParams.get("jitterMs") || "300", 10));
 
     if (!spreadsheetId) {
       return NextResponse.json(
@@ -173,6 +186,20 @@ export async function GET(request) {
         { status: 400 }
       );
     }
+
+    // Try cache first
+    const cacheKey = makeCacheKey([
+      "freesignupsheet",
+      spreadsheetId,
+      String(dateRangeParam),
+      specificDate || "",
+      monthParam || "",
+      yearParam || "",
+      monthYearParam || "",
+      fields ? fields.sort().join(",") : "__all__",
+    ]);
+    const cached = getCache(cacheKey);
+    if (cached) return NextResponse.json(cached);
 
     // Acquire service account credentials
     const { client_email, private_key } = getServiceAccount();
@@ -265,20 +292,21 @@ export async function GET(request) {
     }
 
     // Helper with retry/backoff for quota errors
-    const getRowsWithRetry = async (sheet, maxRetries = 3, initialDelayMs = 600) => {
+    const getRowsWithRetry = async (sheet) => {
       let attempt = 0;
       let delayMs = initialDelayMs;
-      while (true) {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (;;) {
         try {
           return await sheet.getRows();
         } catch (err) {
-          const is429 =
-            (err && err.status === 429) ||
-            (typeof err.message === "string" && err.message.includes("429"));
-          if (is429 && attempt < maxRetries) {
-            await new Promise((r) => setTimeout(r, delayMs));
+          const msg = typeof err?.message === "string" ? err.message : "";
+          const is429 = err?.status === 429 || msg.includes("429") || msg.includes("Quota") || msg.includes("Rate") || msg.includes("limit");
+          if (attempt < maxRetries && is429) {
+            const jitter = Math.floor(Math.random() * jitterMs);
+            await sleep(delayMs + jitter);
             attempt += 1;
-            delayMs *= 2; // exponential backoff
+            delayMs = Math.min(delayMs * 2, 15000);
             continue;
           }
           throw err;
@@ -309,8 +337,9 @@ export async function GET(request) {
           console.error(`Error loading sheet ${title}:`, err);
         }
       }
-      // small delay between calls to respect per-minute quotas
-      await new Promise((r) => setTimeout(r, 200));
+      // inter-sheet delay with jitter to avoid bursts
+      const jitter = Math.floor(Math.random() * Math.max(1, Math.floor(jitterMs / 2)));
+      await new Promise((r) => setTimeout(r, sheetDelayMs + jitter));
     }
 
     // fallback: if nothing matched and dateSheets exist, take most recent N
@@ -381,7 +410,7 @@ export async function GET(request) {
     }
 
     // build contacts with ALL columns including the new ones
-    const contacts = uniqueRows.map((it) => {
+    const contactsAll = uniqueRows.map((it) => {
       const r = it.row;
       return {
         timestamp:
@@ -425,6 +454,14 @@ export async function GET(request) {
       };
     });
 
+    const contacts = fields
+      ? contactsAll.map((c) => {
+          const obj = {};
+          for (const f of fields) if (f in c) obj[f] = c[f];
+          return obj;
+        })
+      : contactsAll;
+
     // compute stats from uniqueRows (pass raw row objects)
     const stats = processSheetRows(uniqueRows.map((it) => it.row));
 
@@ -433,7 +470,7 @@ export async function GET(request) {
       .sort((a, b) => b.date - a.date)
       .map((s) => s.sheet.title);
 
-    return NextResponse.json({
+    const response = {
       ...stats,
       contacts,
       dateRange: {
@@ -467,7 +504,10 @@ export async function GET(request) {
             availableSheetNames,
           }
         : undefined,
-    });
+    };
+
+    if (cacheTtl > 0) setCache(cacheKey, response, cacheTtl);
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Error in freesignupsheet API:", error);
     return NextResponse.json(

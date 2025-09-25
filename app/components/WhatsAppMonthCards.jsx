@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import debounce from "lodash.debounce";
 import {
   BarChart,
   Bar,
@@ -24,6 +25,7 @@ export default function WhatsAppDashboard({
   const [month, setMonth] = useState(controlledMonth || "2025-09");
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(null);
+  const [demoStatusData, setDemoStatusData] = useState(null);
   const [error, setError] = useState(null);
   const [navigating, setNavigating] = useState(false);
 
@@ -80,6 +82,18 @@ export default function WhatsAppDashboard({
         url.searchParams.set(
           "monthYear",
           selectedMonth.split("-")[1] + "-" + selectedMonth.split("-")[0]
+        );
+        // Request only the fields needed by the signup page list view
+        url.searchParams.set(
+          "fields",
+          [
+            "timestamp",
+            "name",
+            "phone",
+            "email",
+            "language",
+            "assignedTo",
+          ].join(",")
         );
 
         // Fire and forget - don't wait for response
@@ -146,7 +160,7 @@ export default function WhatsAppDashboard({
     }
   };
 
-  // OPTIMIZED: Fetch data with better error handling and immediate cache check
+  // OPTIMIZED: Fetch both main data and demo status data
   useEffect(() => {
     if (!month) return;
 
@@ -154,8 +168,14 @@ export default function WhatsAppDashboard({
 
     // Check cache first - if data exists, show immediately
     const cachedStats = getCachedData(month, spreadsheetId);
-    if (cachedStats) {
+    const cachedDemoStatus = getCachedData(
+      `demo-status-${month}`,
+      "1vbMaoxQ-4unVZ7OIgizwHl3hl6bxRlwEhN-m94iLr8k"
+    );
+
+    if (cachedStats && cachedDemoStatus) {
       setStats(cachedStats);
+      setDemoStatusData(cachedDemoStatus);
       setError(null);
       return;
     }
@@ -166,23 +186,57 @@ export default function WhatsAppDashboard({
 
     const controller = new AbortController();
 
-    const fetchStats = async () => {
+    // Fetch both APIs in parallel
+    const fetchAllData = async () => {
       try {
-        const url = new URL("/api/mastersheet", window.location.origin);
-        url.searchParams.set("spreadsheetId", spreadsheetId);
-        url.searchParams.set("month", month);
+        // Main spreadsheet data
+        const mainUrl = new URL("/api/mastersheet", window.location.origin);
+        mainUrl.searchParams.set("spreadsheetId", spreadsheetId);
+        mainUrl.searchParams.set("month", month);
+        mainUrl.searchParams.set(
+          "fields",
+          ["timestamp", "language", "demoRequested", "number", "name"].join(",")
+        );
 
-        const res = await fetch(url.toString(), {
-          signal: controller.signal,
-          // Add timeout to prevent hanging
-          timeout: 10000,
-        });
+        // Demo status data
+        const demoUrl = new URL("/api/demostatus", window.location.origin);
+        demoUrl.searchParams.set(
+          "spreadsheetId",
+          "1vbMaoxQ-4unVZ7OIgizwHl3hl6bxRlwEhN-m94iLr8k"
+        );
 
-        if (!res.ok) throw new Error(`API error ${res.status}`);
-        const data = await res.json();
+        const [mainRes, demoRes] = await Promise.all([
+          fetch(mainUrl.toString(), {
+            signal: controller.signal,
+            timeout: 10000,
+          }),
+          fetch(demoUrl.toString(), {
+            signal: controller.signal,
+            timeout: 10000,
+          }),
+        ]);
 
-        cacheData(month, spreadsheetId, data);
-        setStats(data);
+        if (!mainRes.ok) throw new Error(`Main API error ${mainRes.status}`);
+
+        const mainData = await mainRes.json();
+        let demoData = null;
+
+        if (demoRes.ok) {
+          demoData = await demoRes.json();
+          cacheData(
+            `demo-status-${month}`,
+            "1vbMaoxQ-4unVZ7OIgizwHl3hl6bxRlwEhN-m94iLr8k",
+            demoData
+          );
+        } else {
+          console.warn(
+            "Demo status API failed, continuing without demo completion data"
+          );
+        }
+
+        cacheData(month, spreadsheetId, mainData);
+        setStats(mainData);
+        setDemoStatusData(demoData);
         setError(null);
       } catch (err) {
         if (err.name !== "AbortError") {
@@ -194,13 +248,25 @@ export default function WhatsAppDashboard({
       }
     };
 
-    fetchStats();
+    fetchAllData();
     return () => controller.abort();
   }, [month, fallbackSpreadsheetId]);
 
-  // Process data from API response
+  // Debounced setter for month to reduce rapid refetches and UI churn
+  const debouncedSetMonth = useMemo(
+    () => debounce((val) => setMonth(val), 300),
+    []
+  );
+  useEffect(() => {
+    return () => debouncedSetMonth.cancel();
+  }, [debouncedSetMonth]);
+
+  // Process data from API response with demo completion data
   const processedData = useMemo(() => {
     if (!stats || !stats.contacts) return null;
+
+    console.log("Raw stats from API:", stats); // Debug log
+    console.log("Demo status data:", demoStatusData); // Debug log
 
     const totalContacts = stats.rawStats?.totalContacts ?? 0;
     const demoRequested = stats.rawStats?.demoRequested ?? 0;
@@ -208,10 +274,90 @@ export default function WhatsAppDashboard({
     const conversionRate =
       totalContacts > 0 ? Math.round((demoRequested / totalContacts) * 100) : 0;
 
+    // Process demo completion data - CORRECT LOGIC
+    let demoCompleted = 0;
+    let demoConversionRate = 0;
+    let totalDemoRequestedContacts = 0;
+    const phoneNumberMapping = demoStatusData?.rawStats?.phoneNumberMapping || {};
+
+    // Use RAW phones (trim only), as per request
+    const getRawPhone = (val) => {
+      if (!val) return "";
+      return val.toString().trim();
+    };
+
+    console.log("Phone mapping from demo sheet:", phoneNumberMapping);
+
+    if (demoStatusData) {
+      // Step 1: Create lookup map for demo-requested contacts from mastersheet by RAW phone
+      const demoRequestedByPhone = new Map();
+      const demoRequestedPhones = [];
+      
+      stats.contacts.forEach((contact) => {
+        const dr =
+          typeof contact.demoRequested === "string"
+            ? contact.demoRequested.toLowerCase().trim()
+            : contact.demoRequested;
+        const isDemoRequested = dr === "yes" || dr === "y" || dr === true;
+        
+        if (isDemoRequested) {
+          totalDemoRequestedContacts++;
+          const phone = getRawPhone(contact.number || contact.phone || contact.phoneNumber || contact.contact || "");
+          if (phone) {
+            demoRequestedByPhone.set(phone, contact);
+            demoRequestedPhones.push(phone);
+          }
+        }
+      });
+
+      console.log(
+        "Demo requested contacts from main sheet:",
+        totalDemoRequestedContacts
+      );
+
+      // Step 2: Match using phoneNumberMapping for O(1) checks
+      const seenDemoKeys = new Set();
+      const matchedContacts = [];
+
+      demoRequestedPhones.forEach((phone) => {
+        const mapped = phoneNumberMapping[phone];
+        if (mapped && mapped.isCompleted) {
+          if (!seenDemoKeys.has(phone)) {
+            seenDemoKeys.add(phone);
+            demoCompleted++;
+            const matchedContact = demoRequestedByPhone.get(phone);
+            console.log("Match found - Phone:", phone, "Status:", mapped.demoStatus, "Contact:", matchedContact?.name || "");
+            matchedContacts.push({
+              phone,
+              name: matchedContact?.name || "",
+              timestamp: matchedContact?.timestamp || "",
+              demoRequested: matchedContact?.demoRequested,
+              demoCompletedStatus: mapped.demoStatus,
+            });
+          }
+        }
+      });
+
+      // Step 3: Calculate conversion rate based on demo requested vs completed
+      demoConversionRate =
+        totalDemoRequestedContacts > 0
+          ? Math.round((demoCompleted / totalDemoRequestedContacts) * 100)
+          : 0;
+
+      console.log(
+        `Final calculation: ${demoCompleted} completed out of ${totalDemoRequestedContacts} requested = ${demoConversionRate}%`
+      );
+      console.log("Matched contacts (Demo Requested = Yes AND Demo Completed = Yes):", matchedContacts);
+    }
+
     const languageCount = {};
     const contactsByDate = {};
 
-    stats.contacts.forEach((contact) => {
+    // Process each contact from real API data
+    stats.contacts.forEach((contact, index) => {
+      // Debug individual contacts
+      if (index < 5) console.log(`Contact ${index}:`, contact);
+
       const date = new Date(contact.timestamp);
       const day = date.getDate();
 
@@ -221,19 +367,34 @@ export default function WhatsAppDashboard({
           totalContacts: 0,
           demoRequested: 0,
           demoNo: 0,
+          demoCompleted: 0,
         };
       }
 
+      // Count total contacts per day
       contactsByDate[day].totalContacts += 1;
 
-      if (contact.demoRequested === "Yes") {
+      // Count demo requests per day
+      const dr =
+        typeof contact.demoRequested === "string"
+          ? contact.demoRequested.toLowerCase().trim()
+          : contact.demoRequested;
+      const isDemoRequested = dr === "yes" || dr === "y" || dr === true;
+      if (isDemoRequested) {
         contactsByDate[day].demoRequested += 1;
+
+        // Check completion via mapping for RAW phone
+        const phone = getRawPhone(contact.number || contact.phone || contact.phoneNumber || contact.contact || "");
+        const mapped = phoneNumberMapping[phone];
+        if (mapped && mapped.isCompleted) {
+          contactsByDate[day].demoCompleted += 1;
+        }
       } else {
         contactsByDate[day].demoNo += 1;
       }
 
+      // Process language data
       let language = contact.language || "";
-
       if (language === "Not Selected" || language.trim() === "" || !language) {
         language = "Other";
       }
@@ -248,6 +409,8 @@ export default function WhatsAppDashboard({
       }
       contactsByDate[day][language] += 1;
     });
+
+    console.log("Processed contacts by date:", contactsByDate); // Debug log
 
     const sortedLanguages = Object.entries(languageCount)
       .sort(([, a], [, b]) => b - a)
@@ -265,6 +428,10 @@ export default function WhatsAppDashboard({
             day.totalContacts > 0
               ? (day.demoRequested / day.totalContacts) * 100
               : 0,
+          demoConversionRate:
+            day.demoRequested > 0
+              ? (day.demoCompleted / day.demoRequested) * 100
+              : 0,
         };
 
         Object.keys(sortedLanguages).forEach((lang) => {
@@ -276,33 +443,40 @@ export default function WhatsAppDashboard({
         return processedDay;
       });
 
+    console.log("Final daily data for chart:", dailyData); // Debug log
+    console.log("Demo completed count:", demoCompleted); // Debug log
+
+    // Find the most used language
+    const mostUsedLanguage = Object.entries(sortedLanguages)[0] || [
+      "English",
+      0,
+    ];
+
     return {
       totalContacts,
       demoRequested,
       demoNo,
+      demoCompleted,
+      demoConversionRate,
       languages: sortedLanguages,
       conversionRate,
-      dailyData,
+      dailyData, // This is the real-time data used in the chart
       avgDailyContacts: Math.round(
         totalContacts / Math.max(dailyData.length, 1)
       ),
       avgDailyDemos: Math.round(demoRequested / Math.max(dailyData.length, 1)),
+      mostUsedLanguage: mostUsedLanguage,
     };
-  }, [stats]);
+  }, [stats, demoStatusData]);
 
-  const StatCard = ({ title, value }) => (
-    <div className="bg-white text-gray-800 p-4 rounded-lg shadow-lg border border-gray-200">
-      <h3 className="text-lg font-semibold mb-2">{title}</h3>
-      <div className="text-3xl font-bold">
-        {typeof value === "number" ? value.toLocaleString() : value}
-      </div>
-    </div>
-  );
-
-  const SimpleStatCard = ({ title, value }) => (
-    <div className="bg-white text-gray-800 p-4 rounded-lg shadow-lg border border-gray-200">
-      <h3 className="text-sm font-medium mb-2 text-gray-600">{title}</h3>
-      <div className="text-2xl font-bold">
+  const StatCard = ({ title, value, className = "" }) => (
+    <div
+      className={`bg-white text-gray-800 p-3 rounded-lg shadow-md border border-gray-200 ${className}`}
+    >
+      <h3 className="text-xs font-medium mb-1 text-gray-600 uppercase">
+        {title}
+      </h3>
+      <div className="text-xl font-bold">
         {typeof value === "number" ? value.toLocaleString() : value}
       </div>
     </div>
@@ -334,25 +508,26 @@ export default function WhatsAppDashboard({
   const currentSpreadsheetId = getSpreadsheetId(month);
 
   if (loading && !stats) return <LoadingState />;
-  if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
-  if (!processedData) return <div className="p-6">Loading...</div>;
+  if (error) return <div className="p-4 text-red-600">Error: {error}</div>;
+  if (!processedData) return <div className="p-4">Loading...</div>;
 
-  const topLanguages = Object.entries(processedData.languages).slice(0, 6);
+  const [mostUsedLanguage, mostUsedCount] = processedData.mostUsedLanguage;
 
   return (
-    <div className="p-6 bg-gray-100 min-h-screen">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 bg-gray-100 min-h-screen">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
             DEPLOYH.AI PERFORMANCE DASHBOARD
           </h1>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {!hideNavButtons && (
             <button
               onClick={handleNavigateToFreeSignup}
               disabled={navigating}
-              className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white font-medium py-2 px-4 rounded-lg shadow-lg transition-all duration-200 flex items-center gap-2 text-sm"
+              className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white font-medium py-2 px-3 rounded-lg shadow-lg transition-all duration-200 flex items-center gap-2 text-sm"
             >
               {navigating ? (
                 <>
@@ -384,9 +559,9 @@ export default function WhatsAppDashboard({
             onChange={(e) => {
               const val = e.target.value;
               if (onChangeMonth) onChangeMonth(val);
-              setMonth(val);
+              debouncedSetMonth(val);
             }}
-            className="border px-3 py-2 rounded bg-white"
+            className="border px-3 py-2 rounded bg-white text-sm"
           >
             {months.map((m) => (
               <option key={m} value={m}>
@@ -408,182 +583,153 @@ export default function WhatsAppDashboard({
           </div>
         )}
 
-        {/* Top 6 Cards Row - Main Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
-          <SimpleStatCard
-            title="TOTAL CONTACTS"
+        {/* Top 6 Cards - Main Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+          <StatCard
+            title="Total Contacts"
             value={processedData.totalContacts}
           />
-          <SimpleStatCard
-            title="DEMO REQUESTED"
+          <StatCard
+            title="Demo Requested"
             value={`${processedData.demoRequested} (${processedData.conversionRate}%)`}
           />
-          <SimpleStatCard
-            title="DEMO DECLINED"
+          <StatCard
+            title="Demo Declined"
             value={`${processedData.demoNo} (${
               100 - processedData.conversionRate
             }%)`}
           />
-          {topLanguages.slice(0, 3).map(([language, count]) => (
-            <SimpleStatCard
-              key={language}
-              title={`${language.toUpperCase()} USERS`}
-              value={`${count} (${Math.round(
-                (count / processedData.totalContacts) * 100
-              )}%)`}
-            />
-          ))}
+          <StatCard
+            title="Demo Completed"
+            value={
+              demoStatusData
+                ? `${processedData.demoCompleted} (${processedData.demoConversionRate}%)`
+                : "No Data"
+            }
+            className={!demoStatusData ? "text-gray-500" : ""}
+          />
+          <StatCard
+            title="Conversion Rate (Demo)"
+            value={
+              demoStatusData
+                ? `${processedData.demoConversionRate}%`
+                : "No Data"
+            }
+            className={!demoStatusData ? "text-gray-500" : ""}
+          />
+          <StatCard
+            title={`${mostUsedLanguage} Users`}
+            value={`${mostUsedCount} (${Math.round(
+              (mostUsedCount / processedData.totalContacts) * 100
+            )}%)`}
+          />
         </div>
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Left Side - Core Stats + All Language Cards */}
-          <div className="lg:col-span-2">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <StatCard
-                title="TOTAL CONTACTS"
-                value={processedData.totalContacts}
-                prevValue={620}
-                prevChange={16}
-                goal={800}
-                goalChange={-10}
-              />
-              <StatCard
-                title="DEMO REQUESTED"
-                value={processedData.demoRequested}
-                prevValue={95}
-                prevChange={16}
-                goal={150}
-                goalChange={-27}
-              />
-              <StatCard
-                title="CONVERSION RATE"
-                value={`${processedData.conversionRate}%`}
-                prevValue="13%"
-                prevChange={2}
-                goal="18%"
-                goalChange={-3}
-              />
-              <StatCard
-                title="AVG DAILY CONTACTS"
-                value={processedData.avgDailyContacts}
-                prevValue={18}
-                prevChange={28}
-                goal={25}
-                goalChange={-8}
-              />
-
-              {Object.entries(processedData.languages).map(
-                ([language, count]) => (
-                  <StatCard
-                    key={language}
-                    title={`${language.toUpperCase()} USERS`}
-                    value={count}
-                    prevValue={Math.round(count * 0.85)}
-                    prevChange={Math.round(Math.random() * 30 - 5)}
-                    goal={Math.round(count * 1.2)}
-                    goalChange={Math.round(Math.random() * 20 - 10)}
+        {/* Charts Side by Side on Desktop, Stacked on Mobile */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Daily Lead Generation Chart */}
+          <div className="bg-white p-4 rounded-lg shadow-md">
+            <h3 className="text-lg font-semibold mb-3 text-gray-800">
+              DAILY LEAD GENERATION
+            </h3>
+            <div className="h-64 sm:h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={processedData.dailyData}
+                  margin={{ top: 5, right: 30, left: 5, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis
+                    dataKey="day"
+                    tick={{ fontSize: 12 }}
+                    axisLine={{ stroke: "#e5e5e5" }}
                   />
-                )
-              )}
+                  <YAxis
+                    tick={{ fontSize: 12 }}
+                    axisLine={{ stroke: "#e5e5e5" }}
+                  />
+                  <Bar
+                    dataKey="totalContacts"
+                    fill="#93c5fd"
+                    name="Total Contacts"
+                    radius={[2, 2, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="demoRequested"
+                    fill="#86efac"
+                    name="Demo Requested"
+                    radius={[2, 2, 0, 0]}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-wrap justify-center gap-4 mt-2 text-xs">
+              <div className="flex items-center">
+                <div className="w-3 h-3 bg-blue-300 mr-1 rounded-sm"></div>
+                <span>Total Contacts</span>
+              </div>
+              <div className="flex items-center">
+                <div className="w-3 h-3 bg-green-300 mr-1 rounded-sm"></div>
+                <span>Demo Requested</span>
+              </div>
             </div>
           </div>
 
-          {/* Right Side - 2 Charts */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white p-6 rounded-lg shadow-lg">
-              <h3 className="text-lg font-semibold mb-4 text-gray-800">
-                DAILY LEAD GENERATION
-              </h3>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={processedData.dailyData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="day" />
-                    <YAxis yAxisId="left" />
-                    <YAxis yAxisId="right" orientation="right" />
+          {/* Daily Language Distribution Chart */}
+          <div className="bg-white p-4 rounded-lg shadow-md">
+            <h3 className="text-lg font-semibold mb-3 text-gray-800">
+              DAILY LANGUAGE DISTRIBUTION
+            </h3>
+            <div className="h-64 sm:h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={processedData.dailyData}
+                  margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis
+                    dataKey="day"
+                    tick={{ fontSize: 12 }}
+                    axisLine={{ stroke: "#e5e5e5" }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 12 }}
+                    axisLine={{ stroke: "#e5e5e5" }}
+                  />
+                  {Object.keys(processedData.languages).map((language) => (
                     <Bar
-                      yAxisId="left"
-                      dataKey="totalContacts"
-                      fill="#93c5fd"
-                      name="Total Contacts"
+                      key={language}
+                      dataKey={language}
+                      stackId="a"
+                      fill={languageColors[language] || languageColors["Other"]}
+                      name={language}
+                      radius={
+                        language === Object.keys(processedData.languages)[0]
+                          ? [2, 2, 0, 0]
+                          : [0, 0, 0, 0]
+                      }
                     />
-                    <Bar
-                      yAxisId="left"
-                      dataKey="demoRequested"
-                      fill="#86efac"
-                      name="Demo Requested"
-                    />
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="conversionRate"
-                      stroke="#60a5fa"
-                      strokeWidth={2}
-                      dot={{ fill: "#60a5fa", r: 3 }}
-                      name="Conversion Rate (%)"
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex justify-center space-x-6 mt-2 text-sm">
-                <div className="flex items-center">
-                  <div className="w-4 h-4 bg-blue-300 mr-2"></div>
-                  <span>Total Contacts</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-4 h-4 bg-green-300 mr-2"></div>
-                  <span>Demo Requested</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-3 h-3 rounded-full bg-blue-400 mr-2"></div>
-                  <span>Conversion Rate</span>
-                </div>
-              </div>
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-
-            <div className="bg-white p-6 rounded-lg shadow-lg">
-              <h3 className="text-lg font-semibold mb-4 text-gray-800">
-                DAILY LANGUAGE DISTRIBUTION
-              </h3>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={processedData.dailyData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="day" />
-                    <YAxis />
-                    {Object.keys(processedData.languages).map((language) => (
-                      <Bar
-                        key={language}
-                        dataKey={language}
-                        stackId="a"
-                        fill={
-                          languageColors[language] || languageColors["Other"]
-                        }
-                        name={language}
-                      />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex flex-wrap justify-center gap-4 mt-2 text-sm">
-                {Object.entries(processedData.languages).map(
-                  ([language, count]) => (
-                    <div key={language} className="flex items-center">
-                      <div
-                        className="w-4 h-4 mr-2"
-                        style={{
-                          backgroundColor:
-                            languageColors[language] || languageColors["Other"],
-                        }}
-                      ></div>
-                      <span>
-                        {language} ({count})
-                      </span>
-                    </div>
-                  )
-                )}
-              </div>
+            <div className="flex flex-wrap justify-center gap-2 mt-2 text-xs max-h-16 overflow-y-auto">
+              {Object.entries(processedData.languages)
+                .slice(0, 8)
+                .map(([language, count]) => (
+                  <div key={language} className="flex items-center">
+                    <div
+                      className="w-3 h-3 mr-1 rounded-sm"
+                      style={{
+                        backgroundColor:
+                          languageColors[language] || languageColors["Other"],
+                      }}
+                    ></div>
+                    <span>
+                      {language} ({count})
+                    </span>
+                  </div>
+                ))}
             </div>
           </div>
         </div>
@@ -591,8 +737,8 @@ export default function WhatsAppDashboard({
 
       {/* Metadata */}
       {stats?.metadata && (
-        <div className="mt-6 text-xs text-gray-500">
-          Processed sheets: {stats.metadata.totalSheetsProcessed} — rows
+        <div className="mt-4 text-xs text-gray-500 text-center">
+          Processed sheets: {stats.metadata.totalSheetsProcessed} • Rows
           processed: {stats.metadata.totalRowsProcessed}
         </div>
       )}

@@ -35,7 +35,8 @@ export default function SignupAnalyticsDashboard({
 
   const SPREADSHEET_ID =
     spreadsheetId || "1rWrkTM6Mh0bkwUpk1VsF3ReGkOk-piIoHDeCobSDHKY";
-  const CONVERSION_SPREADSHEET_ID = "195gQV7QzJ-uoKzqGVapMdF5-zAWQyzuF_I8ffkNGc-o";
+  const CONVERSION_SPREADSHEET_ID =
+    "195gQV7QzJ-uoKzqGVapMdF5-zAWQyzuF_I8ffkNGc-o";
   const months = ["2025-09"];
 
   // keep local month in sync if parent controls it
@@ -223,25 +224,30 @@ export default function SignupAnalyticsDashboard({
         const [freeSignupRes, conversionRes] = await Promise.all([
           fetch(
             new URL("/api/freesignupsheet", window.location.origin).toString() +
-            "?" +
-            new URLSearchParams({
-              spreadsheetId: SPREADSHEET_ID,
-              monthYear: selectedMonth.split("-")[1] + "-" + selectedMonth.split("-")[0],
-            }),
+              "?" +
+              new URLSearchParams({
+                spreadsheetId: SPREADSHEET_ID,
+                monthYear:
+                  selectedMonth.split("-")[1] +
+                  "-" +
+                  selectedMonth.split("-")[0],
+              }),
             { signal: controller.signal }
           ),
           fetch(
             new URL("/api/conversionsheet", window.location.origin).toString() +
-            "?" +
-            new URLSearchParams({
-              spreadsheetId: CONVERSION_SPREADSHEET_ID,
-            }),
+              "?" +
+              new URLSearchParams({
+                spreadsheetId: CONVERSION_SPREADSHEET_ID,
+              }),
             { signal: controller.signal }
           ),
         ]);
 
-        if (!freeSignupRes.ok) throw new Error(`FreeSignup API error ${freeSignupRes.status}`);
-        if (!conversionRes.ok) throw new Error(`Conversion API error ${conversionRes.status}`);
+        if (!freeSignupRes.ok)
+          throw new Error(`FreeSignup API error ${freeSignupRes.status}`);
+        if (!conversionRes.ok)
+          throw new Error(`Conversion API error ${conversionRes.status}`);
 
         const [freeSignupData, conversionData] = await Promise.all([
           freeSignupRes.json(),
@@ -321,7 +327,9 @@ export default function SignupAnalyticsDashboard({
 
         // Try email match first
         if (sale.email) {
-          matchedContact = freeSignupByEmail.get(sale.email.toLowerCase().trim());
+          matchedContact = freeSignupByEmail.get(
+            sale.email.toLowerCase().trim()
+          );
         }
 
         // Try contact match if email didn't work
@@ -335,7 +343,8 @@ export default function SignupAnalyticsDashboard({
         if (matchedContact) {
           // prevent double counting same contact if multiple sale rows match
           const uniqueKey =
-            (matchedContact.email && matchedContact.email.toLowerCase().trim()) ||
+            (matchedContact.email &&
+              matchedContact.email.toLowerCase().trim()) ||
             (matchedContact.phone && normalizeContact(matchedContact.phone)) ||
             Math.random().toString(36);
           if (!seenSaleKeys.has(uniqueKey)) {
@@ -502,19 +511,10 @@ export default function SignupAnalyticsDashboard({
     return ["All", ...uniqueAssignees.sort()];
   }, [stats, selectedAssignee]);
 
-  const StatCard = ({ title, value }) => (
-    <div className="bg-white text-gray-800 p-4 rounded-lg shadow-lg border border-gray-200">
-      <h3 className="text-lg font-semibold mb-2">{title}</h3>
-      <div className="text-3xl font-bold mb-2">
-        {typeof value === "number" ? value.toLocaleString() : value}
-      </div>
-    </div>
-  );
-
   const SimpleStatCard = ({ title, value, color = "bg-blue-500" }) => (
-    <div className="bg-white text-gray-800 p-4 rounded-lg shadow-lg border border-gray-200">
-      <h3 className="text-sm font-medium mb-2 text-gray-600">{title}</h3>
-      <div className="text-2xl font-bold">
+    <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-lg shadow-lg border border-gray-200 h-20 sm:h-24 flex flex-col justify-center">
+      <h3 className="text-xs sm:text-sm font-medium mb-1 sm:mb-2 text-gray-600">{title}</h3>
+      <div className="text-lg sm:text-2xl font-bold">
         {typeof value === "number" ? value.toLocaleString() : value}
       </div>
     </div>
@@ -626,12 +626,11 @@ export default function SignupAnalyticsDashboard({
             </div>
           </div>
         )}
-
         {/* Top 6 Cards Row - Main Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-4 mb-6">
           <SimpleStatCard
             title="TOTAL CONTACTS"
-            value={processedData.totalContacts}
+            value={`${processedData.totalContacts} (${processedData.assignedContacts}/${processedData.unassignedContacts})`}
             color="bg-blue-500"
           />
           <SimpleStatCard
@@ -655,161 +654,82 @@ export default function SignupAnalyticsDashboard({
             color="bg-yellow-500"
           />
           <SimpleStatCard
-            title="ASSIGNED / UNASSIGNED"
-            value={`${processedData.assignedContacts} / ${processedData.unassignedContacts}`}
+            title="CONVERSION RATE"
+            value={`${processedData.conversionRate}%`}
             color="bg-purple-500"
           />
         </div>
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Left Side - 8 Stat Cards */}
-          <div className="lg:col-span-2">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <StatCard
-                title="TOTAL CONTACTS"
-                value={processedData.totalContacts}
-                prevValue={Math.round(processedData.totalContacts * 0.85)}
-                prevChange={15}
-                goal={Math.round(processedData.totalContacts * 1.2)}
-                goalChange={-20}
-              />
-              <StatCard
-                title="DEMO REQUESTED"
-                value={processedData.demoRequested}
-                prevValue={Math.round(processedData.demoRequested * 0.9)}
-                prevChange={10}
-                goal={Math.round(processedData.demoRequested * 1.3)}
-                goalChange={-30}
-              />
-              <StatCard
-                title="CONVERSION RATE"
-                value={`${processedData.conversionRate}%`}
-                prevValue={`${Math.max(0, processedData.conversionRate - 5)}%`}
-                prevChange={5}
-                goal={`${processedData.conversionRate + 10}%`}
-                goalChange={-10}
-              />
-              <StatCard
-                title="AVG DAILY CONTACTS"
-                value={processedData.avgDailyContacts}
-                prevValue={Math.max(1, processedData.avgDailyContacts - 3)}
-                prevChange={20}
-                goal={processedData.avgDailyContacts + 5}
-                goalChange={-25}
-              />
-
-              {Object.entries(processedData.languages)
-                .slice(0, 4)
-                .map(([language, count]) => (
-                  <StatCard
-                    key={language}
-                    title={`${language.toUpperCase()} USERS`}
-                    value={count}
-                    prevValue={Math.max(0, Math.round(count * 0.8))}
-                    prevChange={Math.round(Math.random() * 30 - 5)}
-                    goal={Math.round(count * 1.2)}
-                    goalChange={Math.round(Math.random() * 20 - 10)}
+        {/* Two Charts Side by Side */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h3 className="text-lg font-semibold mb-4 text-gray-800">
+              DAILY LEAD GENERATION
+            </h3>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={processedData.dailyData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="day" />
+                  <YAxis />
+                  <Line
+                    type="monotone"
+                    dataKey="totalContacts"
+                    stroke="#60a5fa"
+                    strokeWidth={2}
+                    dot={{ fill: "#60a5fa", r: 3 }}
+                    name="Total Contacts"
                   />
-                ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex justify-center mt-2 text-sm">
+              <div className="flex items-center">
+                <div className="w-3 h-3 rounded-full bg-blue-400 mr-2"></div>
+                <span>Total Contacts</span>
+              </div>
             </div>
           </div>
 
-          {/* Right Side - 2 Charts */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white p-6 rounded-lg shadow-lg">
-              <h3 className="text-lg font-semibold mb-4 text-gray-800">
-                DAILY LEAD GENERATION
-              </h3>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={processedData.dailyData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="day" />
-                    <YAxis yAxisId="left" />
-                    <YAxis yAxisId="right" orientation="right" />
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h3 className="text-lg font-semibold mb-4 text-gray-800">
+              DAILY LANGUAGE DISTRIBUTION
+            </h3>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={processedData.dailyData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="day" />
+                  <YAxis />
+                  {Object.keys(processedData.languages).map((language) => (
                     <Bar
-                      yAxisId="left"
-                      dataKey="totalContacts"
-                      fill="#93c5fd"
-                      name="Total Contacts"
+                      key={language}
+                      dataKey={language}
+                      stackId="a"
+                      fill={languageColors[language] || languageColors["Other"]}
+                      name={language}
                     />
-                    <Bar
-                      yAxisId="left"
-                      dataKey="demoRequested"
-                      fill="#86efac"
-                      name="Demo Requested"
-                    />
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="conversionRate"
-                      stroke="#60a5fa"
-                      strokeWidth={2}
-                      dot={{ fill: "#60a5fa", r: 3 }}
-                      name="Conversion Rate (%)"
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex justify-center space-x-6 mt-2 text-sm">
-                <div className="flex items-center">
-                  <div className="w-4 h-4 bg-blue-300 mr-2"></div>
-                  <span>Total Contacts</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-4 h-4 bg-green-300 mr-2"></div>
-                  <span>Demo Requested</span>
-                </div>
-                <div className="flex items-center">
-                  <div className="w-3 h-3 rounded-full bg-blue-400 mr-2"></div>
-                  <span>Conversion Rate</span>
-                </div>
-              </div>
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-
-            <div className="bg-white p-6 rounded-lg shadow-lg">
-              <h3 className="text-lg font-semibold mb-4 text-gray-800">
-                DAILY LANGUAGE DISTRIBUTION
-              </h3>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={processedData.dailyData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="day" />
-                    <YAxis />
-                    {Object.keys(processedData.languages).map((language) => (
-                      <Bar
-                        key={language}
-                        dataKey={language}
-                        stackId="a"
-                        fill={
-                          languageColors[language] || languageColors["Other"]
-                        }
-                        name={language}
-                      />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex flex-wrap justify-center gap-4 mt-2 text-sm">
-                {Object.entries(processedData.languages).map(
-                  ([language, count]) => (
-                    <div key={language} className="flex items-center">
-                      <div
-                        className="w-4 h-4 mr-2"
-                        style={{
-                          backgroundColor:
-                            languageColors[language] || languageColors["Other"],
-                        }}
-                      ></div>
-                      <span>
-                        {language} ({count})
-                      </span>
-                    </div>
-                  )
-                )}
-              </div>
+            <div className="flex flex-wrap justify-center gap-4 mt-2 text-sm">
+              {Object.entries(processedData.languages).map(
+                ([language, count]) => (
+                  <div key={language} className="flex items-center">
+                    <div
+                      className="w-4 h-4 mr-2"
+                      style={{
+                        backgroundColor:
+                          languageColors[language] || languageColors["Other"],
+                      }}
+                    ></div>
+                    <span>
+                      {language} ({count})
+                    </span>
+                  </div>
+                )
+              )}
             </div>
           </div>
         </div>

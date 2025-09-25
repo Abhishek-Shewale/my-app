@@ -1,14 +1,23 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Bar, Line } from "recharts";
+import {
+  ResponsiveContainer,
+  LineChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Line,
+} from "recharts";
 
 export default function FreeSignupCompare({
   spreadsheetId,
   month: controlledMonth,
   onChangeMonth,
 }) {
-  const [selectedMonth, setSelectedMonth] = useState(controlledMonth || "2025-09");
+  const [selectedMonth, setSelectedMonth] = useState(
+    controlledMonth || "2025-09"
+  );
   const [stats, setStats] = useState(null);
   const [conversionStats, setConversionStats] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -16,7 +25,8 @@ export default function FreeSignupCompare({
 
   const SPREADSHEET_ID =
     spreadsheetId || "1rWrkTM6Mh0bkwUpk1VsF3ReGkOk-piIoHDeCobSDHKY";
-  const CONVERSION_SPREADSHEET_ID = "195gQV7QzJ-uoKzqGVapMdF5-zAWQyzuF_I8ffkNGc-o";
+  const CONVERSION_SPREADSHEET_ID =
+    "195gQV7QzJ-uoKzqGVapMdF5-zAWQyzuF_I8ffkNGc-o";
   const months = ["2025-09"]; // keep in sync with FreeSignup
 
   // keep local month in sync if parent controls it
@@ -99,25 +109,30 @@ export default function FreeSignupCompare({
         const [freeSignupRes, conversionRes] = await Promise.all([
           fetch(
             new URL("/api/freesignupsheet", window.location.origin).toString() +
-            "?" +
-            new URLSearchParams({
-              spreadsheetId: SPREADSHEET_ID,
-              monthYear: selectedMonth.split("-")[1] + "-" + selectedMonth.split("-")[0],
-            }),
+              "?" +
+              new URLSearchParams({
+                spreadsheetId: SPREADSHEET_ID,
+                monthYear:
+                  selectedMonth.split("-")[1] +
+                  "-" +
+                  selectedMonth.split("-")[0],
+              }),
             { signal: controller.signal }
           ),
           fetch(
             new URL("/api/conversionsheet", window.location.origin).toString() +
-            "?" +
-            new URLSearchParams({
-              spreadsheetId: CONVERSION_SPREADSHEET_ID,
-            }),
+              "?" +
+              new URLSearchParams({
+                spreadsheetId: CONVERSION_SPREADSHEET_ID,
+              }),
             { signal: controller.signal }
           ),
         ]);
 
-        if (!freeSignupRes.ok) throw new Error(`FreeSignup API error ${freeSignupRes.status}`);
-        if (!conversionRes.ok) throw new Error(`Conversion API error ${conversionRes.status}`);
+        if (!freeSignupRes.ok)
+          throw new Error(`FreeSignup API error ${freeSignupRes.status}`);
+        if (!conversionRes.ok)
+          throw new Error(`Conversion API error ${conversionRes.status}`);
 
         const [freeSignupData, conversionData] = await Promise.all([
           freeSignupRes.json(),
@@ -153,7 +168,8 @@ export default function FreeSignupCompare({
   const normalizeLanguage = (lang) => {
     if (!lang) return "Other";
     const value = String(lang).trim().toLowerCase();
-    if (!value || value === "not selected" || value === "not provided") return "Other";
+    if (!value || value === "not selected" || value === "not provided")
+      return "Other";
     const map = {
       english: "English",
       hindi: "Hindi",
@@ -175,25 +191,27 @@ export default function FreeSignupCompare({
   const processForAssignee = (assignee) => {
     if (!stats || !stats.contacts) return null;
     const normAssignee = (assignee || "").trim().toLowerCase();
-    const filteredContacts = stats.contacts.filter((c) => ((c.assignedTo || "").trim().toLowerCase()) === normAssignee);
+    const filteredContacts = stats.contacts.filter(
+      (c) => (c.assignedTo || "").trim().toLowerCase() === normAssignee
+    );
     const totalContacts = filteredContacts.length;
 
     // For free signup, everyone accepts demo and completes it
     const demoRequested = totalContacts;
     const demoCompleted = totalContacts;
     const demoDeclined = 0;
-    
+
     // Calculate sales by matching with conversion data
     let salesCount = 0;
     const salesByDate = {};
     const seenSaleKeys = new Set();
-    
+
     if (conversionStats && conversionStats.data) {
       // Create lookup maps for faster matching
       const freeSignupByEmail = new Map();
       const freeSignupByContact = new Map();
-      
-      filteredContacts.forEach(contact => {
+
+      filteredContacts.forEach((contact) => {
         if (contact.email) {
           freeSignupByEmail.set(contact.email.toLowerCase().trim(), contact);
         }
@@ -204,16 +222,18 @@ export default function FreeSignupCompare({
           }
         }
       });
-      
+
       // Match conversion data with free signup data
-      conversionStats.data.forEach(sale => {
+      conversionStats.data.forEach((sale) => {
         let matchedContact = null;
-        
+
         // Try email match first
         if (sale.email) {
-          matchedContact = freeSignupByEmail.get(sale.email.toLowerCase().trim());
+          matchedContact = freeSignupByEmail.get(
+            sale.email.toLowerCase().trim()
+          );
         }
-        
+
         // Try contact match if email didn't work
         if (!matchedContact && sale.contact) {
           const normalizedSaleContact = normalizeContact(sale.contact);
@@ -221,11 +241,12 @@ export default function FreeSignupCompare({
             matchedContact = freeSignupByContact.get(normalizedSaleContact);
           }
         }
-        
+
         if (matchedContact) {
           // prevent double counting same contact if multiple sale rows match
           const uniqueKey =
-            (matchedContact.email && matchedContact.email.toLowerCase().trim()) ||
+            (matchedContact.email &&
+              matchedContact.email.toLowerCase().trim()) ||
             (matchedContact.phone && normalizeContact(matchedContact.phone)) ||
             Math.random().toString(36);
           if (!seenSaleKeys.has(uniqueKey)) {
@@ -235,23 +256,28 @@ export default function FreeSignupCompare({
             const day = d.getDate();
             salesByDate[day] = (salesByDate[day] || 0) + 1;
             // Debug log for sales attribution per assignee
-            console.log("[FreeSignupCompare] Matched sale for assignee", assignee, {
-              sale,
-              matchedContact: {
-                name: matchedContact.name,
-                email: matchedContact.email,
-                phone: matchedContact.phone,
-                assignedTo: matchedContact.assignedTo,
-              },
-              day,
-            });
+            console.log(
+              "[FreeSignupCompare] Matched sale for assignee",
+              assignee,
+              {
+                sale,
+                matchedContact: {
+                  name: matchedContact.name,
+                  email: matchedContact.email,
+                  phone: matchedContact.phone,
+                  assignedTo: matchedContact.assignedTo,
+                },
+                day,
+              }
+            );
           }
         }
       });
     }
-    
+
     // Conversion rate = Sales / Total Contacts (%), rounded
-    const conversionRate = totalContacts > 0 ? Math.round((salesCount / totalContacts) * 100) : 0;
+    const conversionRate =
+      totalContacts > 0 ? Math.round((salesCount / totalContacts) * 100) : 0;
 
     const languageCount = {};
     const contactsByDate = {};
@@ -260,12 +286,18 @@ export default function FreeSignupCompare({
       const date = new Date(contact.timestamp);
       const day = date.getDate();
       if (!contactsByDate[day]) {
-        contactsByDate[day] = { day, totalContacts: 0, demoRequested: 0, demoNo: 0 };
+        contactsByDate[day] = {
+          day,
+          totalContacts: 0,
+          demoRequested: 0,
+          demoNo: 0,
+        };
       }
       contactsByDate[day].totalContacts += 1;
       if (
         contact.demoStatus &&
-        (contact.demoStatus.toLowerCase().includes("scheduled") || contact.demoStatus.toLowerCase().includes("completed"))
+        (contact.demoStatus.toLowerCase().includes("scheduled") ||
+          contact.demoStatus.toLowerCase().includes("completed"))
       ) {
         contactsByDate[day].demoRequested += 1;
       } else {
@@ -285,9 +317,14 @@ export default function FreeSignupCompare({
       .map((day) => ({
         ...day,
         // Per-day sales conversion
-        conversionRate: day.totalContacts > 0 ? ((salesByDate[day.day] || 0) / day.totalContacts) * 100 : 0,
+        conversionRate:
+          day.totalContacts > 0
+            ? ((salesByDate[day.day] || 0) / day.totalContacts) * 100
+            : 0,
         demoCompleted: day.totalContacts,
-        ...Object.fromEntries(Object.keys(sortedLanguages).map((l) => [l, day[l] || 0])),
+        ...Object.fromEntries(
+          Object.keys(sortedLanguages).map((l) => [l, day[l] || 0])
+        ),
       }));
 
     return {
@@ -303,11 +340,17 @@ export default function FreeSignupCompare({
     };
   };
 
-  const sowmya = useMemo(() => processForAssignee("Sowmya"), [stats, conversionStats]);
-  const sukaina = useMemo(() => processForAssignee("Sukaina"), [stats, conversionStats]);
+  const sowmya = useMemo(
+    () => processForAssignee("Sowmya"),
+    [stats, conversionStats]
+  );
+  const sukaina = useMemo(
+    () => processForAssignee("Sukaina"),
+    [stats, conversionStats]
+  );
 
   const SimpleStatCard = ({ title, value, subvalue }) => (
-    <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+    <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow h-24 flex flex-col justify-center">
       <h3 className="text-[10px] sm:text-xs font-semibold tracking-wide text-gray-500 mb-1 uppercase">
         {title}
       </h3>
@@ -316,7 +359,9 @@ export default function FreeSignupCompare({
           {typeof value === "number" ? value.toLocaleString() : value}
         </div>
         {subvalue ? (
-          <div className="text-[11px] sm:text-xs text-gray-500 font-medium">{subvalue}</div>
+          <div className="text-[11px] sm:text-xs text-gray-500 font-medium">
+            {subvalue}
+          </div>
         ) : null}
       </div>
     </div>
@@ -324,7 +369,6 @@ export default function FreeSignupCompare({
 
   const TopFive = ({ data }) => {
     if (!data) return null;
-    const topLanguages = Object.entries(data.languages || {}).slice(0, 1); // Only show 1 language to fit 5 cards
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 mb-4 sm:mb-6">
         <SimpleStatCard title="Total Contacts" value={data.totalContacts} />
@@ -342,7 +386,9 @@ export default function FreeSignupCompare({
   return (
     <div className="p-4 sm:p-6 bg-gray-100 min-h-screen">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">FREE SIGNUP — COMPARE</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
+          FREE SIGNUP — COMPARE
+        </h1>
         <div className="w-full sm:w-auto">
           <select
             value={selectedMonth}
@@ -368,32 +414,30 @@ export default function FreeSignupCompare({
           <h2 className="text-base sm:text-lg font-semibold mb-3">Sowmya</h2>
           <TopFive data={sowmya} />
           <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
-            <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800">DAILY LEAD GENERATION</h3>
+            <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800">
+              DAILY LEAD GENERATION
+            </h3>
             <div className="h-64 lg:h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={sowmya?.dailyData || []}>
+                <LineChart data={sowmya?.dailyData || []}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="day" />
-                  <YAxis yAxisId="left" />
-                  <YAxis yAxisId="right" orientation="right" />
-                  <Bar yAxisId="left" dataKey="totalContacts" fill="#93c5fd" name="Total Contacts" />
-                  <Bar yAxisId="left" dataKey="demoRequested" fill="#86efac" name="Demo Requested" />
-                  <Line yAxisId="right" type="monotone" dataKey="conversionRate" stroke="#60a5fa" strokeWidth={2} dot={{ fill: "#60a5fa", r: 3 }} name="Conversion Rate (%)" />
-                </ComposedChart>
+                  <YAxis />
+                  <Line
+                    type="monotone"
+                    dataKey="totalContacts"
+                    stroke="#60a5fa"
+                    strokeWidth={2}
+                    dot={{ fill: "#60a5fa", r: 3 }}
+                    name="Total Contacts"
+                  />
+                </LineChart>
               </ResponsiveContainer>
             </div>
-            <div className="flex justify-center space-x-6 mt-2 text-sm">
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-blue-300 mr-2"></div>
-                <span>Total Contacts</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-green-300 mr-2"></div>
-                <span>Demo Requested</span>
-              </div>
+            <div className="flex justify-center mt-2 text-sm">
               <div className="flex items-center">
                 <div className="w-3 h-3 rounded-full bg-blue-400 mr-2"></div>
-                <span>Conversion Rate</span>
+                <span>Total Contacts</span>
               </div>
             </div>
           </div>
@@ -404,32 +448,30 @@ export default function FreeSignupCompare({
           <h2 className="text-base sm:text-lg font-semibold mb-3">Sukaina</h2>
           <TopFive data={sukaina} />
           <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
-            <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800">DAILY LEAD GENERATION</h3>
+            <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800">
+              DAILY LEAD GENERATION
+            </h3>
             <div className="h-64 lg:h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={sukaina?.dailyData || []}>
+                <LineChart data={sukaina?.dailyData || []}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="day" />
-                  <YAxis yAxisId="left" />
-                  <YAxis yAxisId="right" orientation="right" />
-                  <Bar yAxisId="left" dataKey="totalContacts" fill="#93c5fd" name="Total Contacts" />
-                  <Bar yAxisId="left" dataKey="demoRequested" fill="#86efac" name="Demo Requested" />
-                  <Line yAxisId="right" type="monotone" dataKey="conversionRate" stroke="#60a5fa" strokeWidth={2} dot={{ fill: "#60a5fa", r: 3 }} name="Conversion Rate (%)" />
-                </ComposedChart>
+                  <YAxis />
+                  <Line
+                    type="monotone"
+                    dataKey="totalContacts"
+                    stroke="#60a5fa"
+                    strokeWidth={2}
+                    dot={{ fill: "#60a5fa", r: 3 }}
+                    name="Total Contacts"
+                  />
+                </LineChart>
               </ResponsiveContainer>
             </div>
-            <div className="flex justify-center space-x-6 mt-2 text-sm">
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-blue-300 mr-2"></div>
-                <span>Total Contacts</span>
-              </div>
-              <div className="flex items-center">
-                <div className="w-4 h-4 bg-green-300 mr-2"></div>
-                <span>Demo Requested</span>
-              </div>
+            <div className="flex justify-center mt-2 text-sm">
               <div className="flex items-center">
                 <div className="w-3 h-3 rounded-full bg-blue-400 mr-2"></div>
-                <span>Conversion Rate</span>
+                <span>Total Contacts</span>
               </div>
             </div>
           </div>

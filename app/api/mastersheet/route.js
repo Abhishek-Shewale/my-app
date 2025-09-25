@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
+import { getCache, setCache, makeCacheKey } from "../../../lib/serverCache";
 
 // Initialize Google Sheets handler
 const initializeGoogleSheets = async (spreadsheetId) => {
@@ -181,12 +182,38 @@ export async function GET(request) {
     const specificDate = searchParams.get("date"); // Optional specific date
     const monthParam = searchParams.get("month"); // e.g. "2025-09" (YYYY-MM format)
     const dateRange = searchParams.get("dateRange") || "7"; // fallback to days if no month
+    const fieldsParam = searchParams.get("fields");
+    const fields = fieldsParam
+      ? fieldsParam
+          .split(",")
+          .map((f) => f.trim())
+          .filter(Boolean)
+      : null;
+    const cacheTtl = Math.max(0, parseInt(searchParams.get("cacheTtl") || "300", 10));
+    const sheetDelayMs = Math.max(0, parseInt(searchParams.get("sheetDelayMs") || "400", 10));
+    const maxRetries = Math.max(0, parseInt(searchParams.get("maxRetries") || "4", 10));
+    const initialDelayMs = Math.max(100, parseInt(searchParams.get("initialDelayMs") || "500", 10));
+    const jitterMs = Math.max(0, parseInt(searchParams.get("jitterMs") || "300", 10));
 
     if (!spreadsheetId) {
       return NextResponse.json(
         { error: "Spreadsheet ID is required" },
         { status: 400 }
       );
+    }
+
+    // Cache key includes inputs that affect the response shape
+    const cacheKey = makeCacheKey([
+      "mastersheet",
+      spreadsheetId,
+      specificDate || "",
+      monthParam || "",
+      String(dateRange),
+      fields ? fields.sort().join(",") : "__all__",
+    ]);
+    const cached = getCache(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
     }
 
     // Initialize Google Sheets
@@ -240,7 +267,29 @@ export async function GET(request) {
     // Process only existing sheets
     for (const sheet of sheetsToProcess) {
       try {
-        const rows = await sheet.getRows();
+        // Robust retry with backoff + jitter
+        let attempt = 0;
+        let delayMs = initialDelayMs;
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+        const getRowsWithRetry = async () => {
+          for (;;) {
+            try {
+              return await sheet.getRows();
+            } catch (error) {
+              const msg = typeof error?.message === "string" ? error.message : "";
+              const is429 = error?.status === 429 || msg.includes("429") || msg.includes("Quota") || msg.includes("Rate") || msg.includes("limit");
+              if (attempt < maxRetries && is429) {
+                const jitter = Math.floor(Math.random() * jitterMs);
+                await sleep(delayMs + jitter);
+                attempt += 1;
+                delayMs = Math.min(delayMs * 2, 15000);
+                continue;
+              }
+              throw error;
+            }
+          }
+        };
+        const rows = await getRowsWithRetry();
 
         // Check if sheet has valid data (non-empty rows with required columns)
         if (rows && rows.length > 0) {
@@ -277,6 +326,9 @@ export async function GET(request) {
           });
         }
       }
+      // Respect per-sheet delay to avoid bursts
+      const jitter = Math.floor(Math.random() * Math.max(1, Math.floor(jitterMs / 2)));
+      await new Promise((r) => setTimeout(r, sheetDelayMs + jitter));
     }
 
     // Sort all rows by Timestamp descending
@@ -310,16 +362,24 @@ export async function GET(request) {
     const stats = processSheetData(uniqueRows);
 
     // Extract contacts with all required fields and properly formatted timestamps
-    const contacts = uniqueRows
-      .filter((row) => row.get("Phone Number") && row.get("Name")) // Only include contacts with both phone and name
+    const contactsAll = uniqueRows
+      .filter((row) => row.get("Phone Number") && row.get("Name"))
       .map((row) => ({
         number: row.get("Phone Number"),
         name: row.get("Name"),
-        email: row.get("Email") || "", // Include email field
+        email: row.get("Email") || "",
         timestamp: formatTimestamp(row.get("Timestamp")),
         language: row.get("Language") || "Not Selected",
         demoRequested: row.get("Demo Requested") || "No",
       }));
+
+    const contacts = fields
+      ? contactsAll.map((c) => {
+          const obj = {};
+          for (const f of fields) if (f in c) obj[f] = c[f];
+          return obj;
+        })
+      : contactsAll;
 
     // Get available sheet names for frontend
     const availableSheetNames = dateSheets
@@ -331,7 +391,7 @@ export async function GET(request) {
       });
 
     // Return comprehensive data
-    return NextResponse.json({
+    const response = {
       ...stats,
       contacts,
       dateRange: {
@@ -350,14 +410,19 @@ export async function GET(request) {
         totalSheetsSkipped: skippedSheets.length,
         totalRowsProcessed: allRows.length,
         uniqueContacts: uniqueRows.length,
-        filteredContacts: contacts.length, // Only contacts with both name and number
+        filteredContacts: contacts.length,
         dateRange: specificDate
           ? `Specific date: ${specificDate}`
           : monthParam
           ? `Month: ${monthParam}`
           : `Last ${dateRange} days`,
       },
-    });
+    };
+
+    // Save to cache
+    if (cacheTtl > 0) setCache(cacheKey, response, cacheTtl);
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Error fetching WhatsApp stats:", error);
     return NextResponse.json(
