@@ -189,11 +189,26 @@ export async function GET(request) {
           .map((f) => f.trim())
           .filter(Boolean)
       : null;
-    const cacheTtl = Math.max(0, parseInt(searchParams.get("cacheTtl") || "300", 10));
-    const sheetDelayMs = Math.max(0, parseInt(searchParams.get("sheetDelayMs") || "400", 10));
-    const maxRetries = Math.max(0, parseInt(searchParams.get("maxRetries") || "4", 10));
-    const initialDelayMs = Math.max(100, parseInt(searchParams.get("initialDelayMs") || "500", 10));
-    const jitterMs = Math.max(0, parseInt(searchParams.get("jitterMs") || "300", 10));
+    const cacheTtl = Math.max(
+      0,
+      parseInt(searchParams.get("cacheTtl") || "300", 10)
+    );
+    const sheetDelayMs = Math.max(
+      0,
+      parseInt(searchParams.get("sheetDelayMs") || "400", 10)
+    );
+    const maxRetries = Math.max(
+      0,
+      parseInt(searchParams.get("maxRetries") || "4", 10)
+    );
+    const initialDelayMs = Math.max(
+      100,
+      parseInt(searchParams.get("initialDelayMs") || "500", 10)
+    );
+    const jitterMs = Math.max(
+      0,
+      parseInt(searchParams.get("jitterMs") || "300", 10)
+    );
 
     if (!spreadsheetId) {
       return NextResponse.json(
@@ -276,8 +291,14 @@ export async function GET(request) {
             try {
               return await sheet.getRows();
             } catch (error) {
-              const msg = typeof error?.message === "string" ? error.message : "";
-              const is429 = error?.status === 429 || msg.includes("429") || msg.includes("Quota") || msg.includes("Rate") || msg.includes("limit");
+              const msg =
+                typeof error?.message === "string" ? error.message : "";
+              const is429 =
+                error?.status === 429 ||
+                msg.includes("429") ||
+                msg.includes("Quota") ||
+                msg.includes("Rate") ||
+                msg.includes("limit");
               if (attempt < maxRetries && is429) {
                 const jitter = Math.floor(Math.random() * jitterMs);
                 await sleep(delayMs + jitter);
@@ -327,7 +348,9 @@ export async function GET(request) {
         }
       }
       // Respect per-sheet delay to avoid bursts
-      const jitter = Math.floor(Math.random() * Math.max(1, Math.floor(jitterMs / 2)));
+      const jitter = Math.floor(
+        Math.random() * Math.max(1, Math.floor(jitterMs / 2))
+      );
       await new Promise((r) => setTimeout(r, sheetDelayMs + jitter));
     }
 

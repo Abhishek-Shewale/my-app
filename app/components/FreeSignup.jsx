@@ -511,12 +511,29 @@ export default function SignupAnalyticsDashboard({
     return ["All", ...uniqueAssignees.sort()];
   }, [stats, selectedAssignee]);
 
-  const SimpleStatCard = ({ title, value, color = "bg-blue-500" }) => (
-    <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-lg shadow-lg border border-gray-200 h-20 sm:h-24 flex flex-col justify-center">
-      <h3 className="text-xs sm:text-sm font-medium mb-1 sm:mb-2 text-gray-600">{title}</h3>
-      <div className="text-lg sm:text-2xl font-bold">
+  const SimpleStatCard = ({
+    title,
+    value,
+    color = "bg-blue-500",
+    breakdown,
+  }) => (
+    <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-lg shadow-lg border border-gray-200 min-h-20 sm:min-h-24 flex flex-col justify-center">
+      <h3 className="text-xs sm:text-sm font-medium mb-1 sm:mb-2 text-gray-600">
+        {title}
+      </h3>
+      <div className="text-lg sm:text-2xl font-bold mb-1">
         {typeof value === "number" ? value.toLocaleString() : value}
       </div>
+      {breakdown && (
+        <div className="text-xs text-gray-500 space-y-0.5">
+          {breakdown.map((item, index) => (
+            <div key={index} className="flex justify-between">
+              <span>{item.label}</span>
+              <span className="font-medium">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -630,7 +647,11 @@ export default function SignupAnalyticsDashboard({
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-4 mb-6">
           <SimpleStatCard
             title="TOTAL CONTACTS"
-            value={`${processedData.totalContacts} (${processedData.assignedContacts}/${processedData.unassignedContacts})`}
+            value={processedData.totalContacts}
+            breakdown={[
+              { label: "Assigned", value: processedData.assignedContacts },
+              { label: "Unassigned", value: processedData.unassignedContacts },
+            ]}
             color="bg-blue-500"
           />
           <SimpleStatCard

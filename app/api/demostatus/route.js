@@ -55,11 +55,7 @@ const processDemoStatusData = (rows) => {
   // Normalize name: trim, lowercase, collapse multiple spaces
   const normalizeName = (raw) => {
     if (!raw) return "";
-    return raw
-      .toString()
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, " ");
+    return raw.toString().toLowerCase().trim().replace(/\s+/g, " ");
   };
 
   // Create phone number mapping for demo status
@@ -245,12 +241,19 @@ export async function GET(request) {
     // Extract detailed demo status data using RAW phone (include name)
     const data = rows.map((row) => ({
       phoneNumber: (
-        row.get("Phone Number") || row.get("Phone") || row.get("Contact") || ""
+        row.get("Phone Number") ||
+        row.get("Phone") ||
+        row.get("Contact") ||
+        ""
       )
         .toString()
         .trim(),
       name: (row.get("Name") || "").toString().trim(),
-      nameKey: (row.get("Name") || "").toString().toLowerCase().trim().replace(/\s+/g, " "),
+      nameKey: (row.get("Name") || "")
+        .toString()
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, " "),
       demoStatus: (row.get("Demo Completed") || "").toString().trim(),
     }));
 

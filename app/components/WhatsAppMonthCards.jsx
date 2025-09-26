@@ -278,7 +278,8 @@ export default function WhatsAppDashboard({
     let demoCompleted = 0;
     let demoConversionRate = 0;
     let totalDemoRequestedContacts = 0;
-    const phoneNumberMapping = demoStatusData?.rawStats?.phoneNumberMapping || {};
+    const phoneNumberMapping =
+      demoStatusData?.rawStats?.phoneNumberMapping || {};
 
     // Use RAW phones (trim only), as per request
     const getRawPhone = (val) => {
@@ -292,17 +293,23 @@ export default function WhatsAppDashboard({
       // Step 1: Create lookup map for demo-requested contacts from mastersheet by RAW phone
       const demoRequestedByPhone = new Map();
       const demoRequestedPhones = [];
-      
+
       stats.contacts.forEach((contact) => {
         const dr =
           typeof contact.demoRequested === "string"
             ? contact.demoRequested.toLowerCase().trim()
             : contact.demoRequested;
         const isDemoRequested = dr === "yes" || dr === "y" || dr === true;
-        
+
         if (isDemoRequested) {
           totalDemoRequestedContacts++;
-          const phone = getRawPhone(contact.number || contact.phone || contact.phoneNumber || contact.contact || "");
+          const phone = getRawPhone(
+            contact.number ||
+              contact.phone ||
+              contact.phoneNumber ||
+              contact.contact ||
+              ""
+          );
           if (phone) {
             demoRequestedByPhone.set(phone, contact);
             demoRequestedPhones.push(phone);
@@ -326,7 +333,14 @@ export default function WhatsAppDashboard({
             seenDemoKeys.add(phone);
             demoCompleted++;
             const matchedContact = demoRequestedByPhone.get(phone);
-            console.log("Match found - Phone:", phone, "Status:", mapped.demoStatus, "Contact:", matchedContact?.name || "");
+            console.log(
+              "Match found - Phone:",
+              phone,
+              "Status:",
+              mapped.demoStatus,
+              "Contact:",
+              matchedContact?.name || ""
+            );
             matchedContacts.push({
               phone,
               name: matchedContact?.name || "",
@@ -347,7 +361,10 @@ export default function WhatsAppDashboard({
       console.log(
         `Final calculation: ${demoCompleted} completed out of ${totalDemoRequestedContacts} requested = ${demoConversionRate}%`
       );
-      console.log("Matched contacts (Demo Requested = Yes AND Demo Completed = Yes):", matchedContacts);
+      console.log(
+        "Matched contacts (Demo Requested = Yes AND Demo Completed = Yes):",
+        matchedContacts
+      );
     }
 
     const languageCount = {};
@@ -384,7 +401,13 @@ export default function WhatsAppDashboard({
         contactsByDate[day].demoRequested += 1;
 
         // Check completion via mapping for RAW phone
-        const phone = getRawPhone(contact.number || contact.phone || contact.phoneNumber || contact.contact || "");
+        const phone = getRawPhone(
+          contact.number ||
+            contact.phone ||
+            contact.phoneNumber ||
+            contact.contact ||
+            ""
+        );
         const mapped = phoneNumberMapping[phone];
         if (mapped && mapped.isCompleted) {
           contactsByDate[day].demoCompleted += 1;
