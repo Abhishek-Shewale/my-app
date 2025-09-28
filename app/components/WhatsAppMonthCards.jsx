@@ -19,7 +19,6 @@ import AIRecommendationCards from "./AIRecommendationCards";
 
 import { TrendingDown } from "lucide-react";
 
-
 export default function WhatsAppDashboard({
   fallbackSpreadsheetId,
   hideNavButtons,
@@ -205,9 +204,7 @@ export default function WhatsAppDashboard({
         mainUrl.searchParams.set("month", month);
         mainUrl.searchParams.set(
           "fields",
-          ["timestamp", "language", "demoRequested", "number", "name"].join(
-            ","
-          )
+          ["timestamp", "language", "demoRequested", "number", "name"].join(",")
         );
 
         // Demo status data
@@ -218,8 +215,12 @@ export default function WhatsAppDashboard({
         );
 
         // Free signup data (phones only) for the selected month
-        const signupSpreadsheetId = "1rWrkTM6Mh0bkwUpk1VsF3ReGkOk-piIoHDeCobSDHKY";
-        const freeSignupUrl = new URL("/api/freesignupsheet", window.location.origin);
+        const signupSpreadsheetId =
+          "1rWrkTM6Mh0bkwUpk1VsF3ReGkOk-piIoHDeCobSDHKY";
+        const freeSignupUrl = new URL(
+          "/api/freesignupsheet",
+          window.location.origin
+        );
         freeSignupUrl.searchParams.set("spreadsheetId", signupSpreadsheetId);
         freeSignupUrl.searchParams.set(
           "monthYear",
@@ -554,7 +555,6 @@ export default function WhatsAppDashboard({
     };
   }, [stats, demoStatusData, freeSignupData]);
 
-
   const StatCard = ({ title, value, className = "", isCritical = false }) => (
     <div
       className={`bg-white text-gray-800 p-3 rounded-lg shadow-md border border-gray-200 ${className}`}
@@ -562,30 +562,24 @@ export default function WhatsAppDashboard({
       <h3 className="text-xs font-medium mb-1 text-gray-600 uppercase">
         {title}
       </h3>
-      <div className={`text-xl font-bold flex items-center gap-2 ${isCritical ? "text-red-600" : ""}`}>
-        <span>{typeof value === "number" ? value.toLocaleString() : value}</span>
-        {isCritical && (
-          <TrendingDown className="w-5 h-5 text-red-600" strokeWidth={3} aria-label="Downtrend" />
-        )}
-
-
-  const StatCard = ({ title, value, className = "" }) => {
-    return (
       <div
-        className={`bg-white text-gray-800 p-3 rounded-lg shadow-md border border-gray-200 ${className}`}
+        className={`text-xl font-bold flex items-center gap-2 ${
+          isCritical ? "text-red-600" : ""
+        }`}
       >
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="text-xs font-medium text-gray-600 uppercase">
-            {title}
-          </h3>
-        </div>
-        <div className="text-xl font-bold">
+        <span>
           {typeof value === "number" ? value.toLocaleString() : value}
-        </div>
-
+        </span>
+        {isCritical && (
+          <TrendingDown
+            className="w-5 h-5 text-red-600"
+            strokeWidth={3}
+            aria-label="Downtrend"
+          />
+        )}
       </div>
-    );
-  };
+    </div>
+  );
 
   // OPTIMIZED: Show skeleton instead of spinner when data exists but loading
   const LoadingState = () => {
@@ -618,8 +612,14 @@ export default function WhatsAppDashboard({
 
   // Derived percentages
   const freeSignupPercent = processedData.totalContacts
-    ? Math.round((processedData.freeSignupCount / processedData.totalContacts) * 100)
+    ? Math.round(
+        (processedData.freeSignupCount / processedData.totalContacts) * 100
+      )
     : 0;
+
+  // Calculate most used language
+  const mostUsedLanguage = Object.keys(processedData.languages)[0] || "Other";
+  const mostUsedCount = processedData.languages[mostUsedLanguage] || 0;
 
   return (
     <div className="p-4 bg-gray-100 min-h-screen">
@@ -695,10 +695,7 @@ export default function WhatsAppDashboard({
           <StatCard
             title="Demo Requested"
             value={`${processedData.demoRequested} (${processedData.conversionRate}%)`}
-
-
             isCritical={processedData.conversionRate < 5}
-
           />
           <StatCard
             title="Demo Declined"
@@ -714,11 +711,9 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
-
-
-            isCritical={!!demoStatusData && processedData.demoConversionRate < 5}
-
-
+            isCritical={
+              !!demoStatusData && processedData.demoConversionRate < 5
+            }
           />
           <StatCard
             title="Conversion Rate (Demo)"
@@ -728,22 +723,20 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
-
           />
           <StatCard
             title={`${mostUsedLanguage} Users`}
             value={`${mostUsedCount} (${Math.round(
               (mostUsedCount / processedData.totalContacts) * 100
             )}%)`}
-
-            isCritical={!!demoStatusData && processedData.demoConversionRate < 5}
+            isCritical={
+              !!demoStatusData && processedData.demoConversionRate < 5
+            }
           />
           <StatCard
             title="Free Signups"
             value={`${processedData.freeSignupCount} (${freeSignupPercent}%)`}
             isCritical={freeSignupPercent < 5}
-
-
           />
         </div>
 
