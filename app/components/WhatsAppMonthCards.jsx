@@ -493,7 +493,7 @@ export default function WhatsAppDashboard({
     };
   }, [stats, demoStatusData]);
 
-  const StatCard = ({ title, value, className = "", showRedBadge }) => {
+  const StatCard = ({ title, value, className = "" }) => {
     return (
       <div
         className={`bg-white text-gray-800 p-3 rounded-lg shadow-md border border-gray-200 ${className}`}
@@ -611,23 +611,16 @@ export default function WhatsAppDashboard({
           <StatCard
             title="Total Contacts"
             value={processedData.totalContacts}
-            showRedBadge={processedData.totalContacts <= 50}
           />
           <StatCard
             title="Demo Requested"
             value={`${processedData.demoRequested} (${processedData.conversionRate}%)`}
-            showRedBadge={
-              processedData.demoRequested <= processedData.totalContacts * 0.8
-            }
           />
           <StatCard
             title="Demo Declined"
             value={`${processedData.demoNo} (${
               100 - processedData.conversionRate
             }%)`}
-            showRedBadge={
-              processedData.demoNo >= processedData.totalContacts * 0.2
-            }
           />
           <StatCard
             title="Demo Completed"
@@ -637,10 +630,6 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
-            showRedBadge={
-              demoStatusData &&
-              processedData.demoCompleted <= processedData.demoRequested * 0.7
-            }
           />
           <StatCard
             title="Conversion Rate (Demo)"
@@ -650,16 +639,12 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
-            showRedBadge={
-              demoStatusData && processedData.demoConversionRate <= 70
-            }
           />
           <StatCard
             title={`${mostUsedLanguage} Users`}
             value={`${mostUsedCount} (${Math.round(
               (mostUsedCount / processedData.totalContacts) * 100
             )}%)`}
-            showRedBadge={mostUsedCount <= processedData.totalContacts * 0.3}
           />
         </div>
 
