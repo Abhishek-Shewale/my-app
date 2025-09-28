@@ -13,30 +13,45 @@ export async function POST(request) {
 
         // Create dashboard-specific prompts
         const getPrompt = (type, data) => {
-            const basePrompt = `You are an education sales coach specializing in selling to PARENTS and STUDENTS (grades 4-12). Analyze the sales team data and provide exactly 3 focused, actionable recommendations for EDUCATION SALES TEAM IMPROVEMENT in JSON format. Return ONLY a valid JSON object with this structure:
+            const basePrompt = `You are a Motivational Marketing and Sales Expert who will help improve education sales team performance. Analyze the sales team data and provide exactly 3 focused, REALISTIC and ACHIEVABLE recommendations for daily actions that can be completed in one working day (8 hours). Target conversion rate: 5%. Include motivational and encouraging language. Return ONLY a valid JSON object with this structure:
       {
         "currentWeek": [
-          "Today's Action Item 1: Specific daily target with concrete steps",
-          "Today's Action Item 2: Specific daily target with concrete steps", 
-          "Today's Action Item 3: Specific daily target with concrete steps"
+          "Today's Action Item 1: Realistic daily target that can be completed in 2-3 hours",
+          "Today's Action Item 2: Realistic daily target that can be completed in 2-3 hours", 
+          "Today's Action Item 3: Realistic daily target that can be completed in 2-3 hours"
         ],
         "nextWeek": [
-          "Weekly Goal 1: Specific target for the week",
-          "Weekly Goal 2: Specific target for the week",
-          "Weekly Goal 3: Specific target for the week"
+          "Weekly Goal 1: Achievable weekly target based on daily capacity",
+          "Weekly Goal 2: Achievable weekly target based on daily capacity",
+          "Weekly Goal 3: Achievable weekly target based on daily capacity"
         ]
       }
       
-      FORMAT REQUIREMENTS:
-      - Each recommendation must include SPECIFIC NUMBERS and TARGETS
-      - Use format: "Today: Make 10 calls, get 2 customers, complete 3 demos"
-      - Include concrete action steps like "Call 5 parents in the morning, follow up with 3 demos in afternoon"
-      - Focus on DAILY TARGETS and WEEKLY GOALS
+      REALISTIC TARGET GUIDELINES:
+      - Daily calls: 15-25 calls maximum (realistic for 8-hour day)
+      - Daily demos: 2-4 demos maximum (each demo takes 30-45 minutes)
+      - Daily follow-ups: 10-15 WhatsApp messages maximum
+      - Focus on QUALITY over QUANTITY
+      - Each task should be completable in 2-3 hours maximum
+      - Consider human limitations and realistic conversion rates
       
-      EXAMPLES OF GOOD RECOMMENDATIONS:
-      - "Today: Make 10 calls to parents, target 2 new customers, complete 3 demos by 5 PM"
-      - "Today: Call 5 parents before lunch, follow up with 2 scheduled demos, send 3 WhatsApp messages"
-      - "This week: Target 15 new parent contacts, complete 8 demos, close 3 sales"
+      MOTIVATIONAL ELEMENTS:
+      - Use encouraging and positive language
+      - Include phrases like "You can do this!", "Great progress!", "Keep up the excellent work!"
+      - Acknowledge achievements and potential
+      - Use empowering action words like "Achieve", "Excel", "Succeed", "Win"
+      - Focus on growth and improvement rather than just numbers
+      
+      FORMAT REQUIREMENTS:
+      - Each recommendation must include REALISTIC NUMBERS that can be achieved in one day
+      - Use format: "Today: Make 15 calls, schedule 2 demos, complete 1 demo"
+      - Include time-bound action steps like "Morning: Call 8 parents, Afternoon: Follow up with 5 demos"
+      - Focus on ACHIEVABLE DAILY TARGETS and REALISTIC WEEKLY GOALS
+      
+      EXAMPLES OF MOTIVATIONAL RECOMMENDATIONS:
+      - "Today: You can achieve great results! Make 15 calls to parents (2 hours), schedule 2 demos (1 hour), complete 1 demo (45 minutes) - you've got this!"
+      - "Today: Excel in your outreach! Call 10 parents before lunch, follow up with 3 scheduled demos, send 5 WhatsApp messages - keep up the excellent work!"
+      - "This week: You're on track to succeed! Target 75 new parent contacts, complete 10 demos, close 2 sales - great progress ahead!"
       
       ROLE BOUNDARIES - ONLY provide recommendations for:
       - Daily call targets and customer acquisition goals
@@ -55,11 +70,15 @@ export async function POST(request) {
       
       ANALYZE CURRENT STATS: Look at conversion rates, demo completion rates, language performance, assignee performance, and identify specific bottlenecks.
       
-      IMPROVEMENT FOCUS: Provide specific daily and weekly targets to increase conversion from current rate to higher rates, improve demo effectiveness, optimize language targeting, enhance follow-up processes.
+      IMPROVEMENT FOCUS: Provide REALISTIC daily and weekly targets that can actually be completed. Focus on sustainable improvements rather than unrealistic goals. Consider:
+      - Human capacity: 8-hour workday limitations
+      - Quality over quantity: Better to do fewer, high-quality interactions
+      - Realistic conversion rates: 2-5% is normal for education sales
+      - Time management: Each task should have clear time allocation
       
-      IMPORTANT: Each recommendation must include SPECIFIC NUMBERS and ACTIONABLE STEPS. Format like: "Today: Make X calls, get Y customers, complete Z demos" or "This week: Target X new contacts, complete Y demos, close Z sales"
+      IMPORTANT: Each recommendation must be REALISTIC and ACHIEVABLE in one day. Format like: "Today: Make 15 calls (2 hours), schedule 2 demos (1 hour), complete 1 demo (45 minutes)" or "This week: Target 75 new contacts, complete 10 demos, close 2 sales"
       
-      Keep each recommendation short (1-2 sentences max) and actionable for education sales team.`;
+      Keep each recommendation short (1-2 sentences max), realistic, and actionable for education sales team.`;
 
             switch (type) {
                 case 'freesignup':

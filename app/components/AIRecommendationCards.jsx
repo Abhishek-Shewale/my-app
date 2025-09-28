@@ -14,6 +14,56 @@ export default function AIRecommendationCards({
   const [nextWeekRecommendations, setNextWeekRecommendations] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [recommendationTimestamp, setRecommendationTimestamp] = useState(null);
+
+  // Function to make numbers bold in text (no blue highlighting)
+  const makeNumbersBold = (text) => {
+    return text.replace(/(\d+(?:\.\d+)?%?)/g, "<strong>$1</strong>");
+  };
+
+  // Function to extract actionable items from recommendation text (max 5 items)
+  const extractActionableItems = (text) => {
+    const items = [];
+    console.log("Extracting from text:", text);
+
+    // Try multiple patterns to catch different formats
+    const patterns = [
+      // Pattern 1: number + space + word(s) until next number, comma, period, or end
+      /(\d+(?:\.\d+)?%?)\s+([a-zA-Z\s]+?)(?=\s*\d|,|\.|!|$)/g,
+      // Pattern 2: number + space + word(s) (simpler)
+      /(\d+(?:\.\d+)?%?)\s+([a-zA-Z]+)/g,
+      // Pattern 3: number + space + word + optional space + word
+      /(\d+(?:\.\d+)?%?)\s+([a-zA-Z]+\s*[a-zA-Z]*)/g,
+    ];
+
+    let numberMatches = [];
+    for (const pattern of patterns) {
+      const matches = text.match(pattern);
+      if (matches && matches.length > 0) {
+        numberMatches = matches;
+        break;
+      }
+    }
+
+    console.log("Number matches found:", numberMatches);
+
+    if (numberMatches) {
+      numberMatches.forEach((match) => {
+        const parts = match.trim().split(/\s+/);
+        if (parts.length >= 2 && items.length < 5) {
+          const number = parts[0];
+          const action = parts.slice(1).join(" ").toLowerCase();
+          // Clean up the action text
+          const cleanAction = action.replace(/[.,!?]$/, "").trim();
+          if (number && cleanAction && cleanAction.length > 0) {
+            items.push({ number, action: cleanAction });
+          }
+        }
+      });
+    }
+    console.log("Extracted items:", items);
+    return items.slice(0, 5); // Limit to 5 items
+  };
 
   // Debounced function to fetch recommendations
   const debouncedFetchRecommendations = useDebouncedCallback(
@@ -35,6 +85,7 @@ export default function AIRecommendationCards({
           if (now - timestamp < oneDayInMs) {
             setCurrentWeekRecommendations(currentWeek || "");
             setNextWeekRecommendations(nextWeek || "");
+            setRecommendationTimestamp(new Date(timestamp));
             setLoading(false);
             return;
           }
@@ -62,6 +113,9 @@ export default function AIRecommendationCards({
         if (result.error) {
           throw new Error(result.error);
         }
+
+        // Store timestamp
+        setRecommendationTimestamp(new Date(result.timestamp || new Date()));
 
         // Handle structured JSON recommendations
         const recommendations = result.recommendations || {};
@@ -110,10 +164,12 @@ export default function AIRecommendationCards({
                 return `<div class="mb-3">
                     <h4 class="font-semibold text-blue-600 mb-1">${
                       index + 1
-                    }. ${title}</h4>
+                    }. ${makeNumbersBold(title)}</h4>
                     ${
                       script
-                        ? `<div class="bg-blue-50 p-2 rounded text-sm italic">"${script}"</div>`
+                        ? `<div class="bg-blue-50 p-2 rounded text-sm italic">"${makeNumbersBold(
+                            script
+                          )}"</div>`
                         : ""
                     }
                    </div>`;
@@ -121,7 +177,7 @@ export default function AIRecommendationCards({
                 return `<div class="mb-2">
                    <h4 class="font-semibold text-gray-800 mb-1">${
                      index + 1
-                   }. ${item}</h4>
+                   }. ${makeNumbersBold(item)}</h4>
                  </div>`;
               }
             })
@@ -165,10 +221,12 @@ export default function AIRecommendationCards({
                 return `<div class="mb-3">
                     <h4 class="font-semibold text-green-600 mb-1">${
                       index + 1
-                    }. ${title}</h4>
+                    }. ${makeNumbersBold(title)}</h4>
                     ${
                       script
-                        ? `<div class="bg-green-50 p-2 rounded text-sm italic">"${script}"</div>`
+                        ? `<div class="bg-green-50 p-2 rounded text-sm italic">"${makeNumbersBold(
+                            script
+                          )}"</div>`
                         : ""
                     }
                    </div>`;
@@ -176,7 +234,7 @@ export default function AIRecommendationCards({
                 return `<div class="mb-2">
                     <h4 class="font-semibold text-gray-800 mb-1">${
                       index + 1
-                    }. ${item}</h4>
+                    }. ${makeNumbersBold(item)}</h4>
                    </div>`;
               }
             })
@@ -210,13 +268,28 @@ export default function AIRecommendationCards({
     }
   }, [data, dashboardType, month, debouncedFetchRecommendations]);
 
-  const RecommendationCard = ({ title, content, isLoading }) => (
+  const RecommendationCard = ({
+    title,
+    content,
+    isLoading,
+    actionableItems = [],
+  }) => (
     <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-4 sm:p-6">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-        <h3 className="text-sm sm:text-base font-semibold text-gray-800">
-          {title}
-        </h3>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+          <h3 className="text-sm sm:text-base font-semibold text-gray-800">
+            {title}
+          </h3>
+        </div>
+        {recommendationTimestamp && (
+          <div className="text-xs text-gray-500">
+            {recommendationTimestamp.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </div>
+        )}
       </div>
 
       <div className="min-h-[120px]">
@@ -245,8 +318,35 @@ export default function AIRecommendationCards({
           </div>
         )}
       </div>
+
+      {/* Actionable Items Section - Left side layout */}
+      {actionableItems.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-gray-100">
+          <div className="grid grid-cols-1 gap-3">
+            {actionableItems.map((item, index) => (
+              <div
+                key={index}
+                className="flex items-center gap-3 bg-blue-50 text-blue-700 px-3 py-2 rounded-lg"
+              >
+                <span className="text-4xl font-bold text-blue-800">
+                  {item.number}
+                </span>
+                <span className="text-sm font-medium">{item.action}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
+
+  // Extract actionable items from recommendations (max 5 items each)
+  const currentWeekActionableItems = currentWeekRecommendations
+    ? extractActionableItems(currentWeekRecommendations.replace(/<[^>]*>/g, ""))
+    : [];
+  const nextWeekActionableItems = nextWeekRecommendations
+    ? extractActionableItems(nextWeekRecommendations.replace(/<[^>]*>/g, ""))
+    : [];
 
   return (
     <div
@@ -256,11 +356,13 @@ export default function AIRecommendationCards({
         title="🤖 Current Week AI Recommendations"
         content={currentWeekRecommendations}
         isLoading={loading}
+        actionableItems={currentWeekActionableItems}
       />
       <RecommendationCard
         title="🎯 Next Week Target AI Recommendations"
         content={nextWeekRecommendations}
         isLoading={loading}
+        actionableItems={nextWeekActionableItems}
       />
     </div>
   );
