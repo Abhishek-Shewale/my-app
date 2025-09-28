@@ -384,6 +384,14 @@ export default function SignupAnalyticsDashboard({
     const conversionRate =
       totalContacts > 0 ? Math.round((salesCount / totalContacts) * 100) : 0;
 
+    // Additional requested rates
+    const demoCompletionRate =
+      demoRequested > 0 ? Math.round((demoCompleted / demoRequested) * 100) : 0;
+    const salesFromCompletedRate =
+      demoCompleted > 0 ? Math.round((salesCount / demoCompleted) * 100) : 0;
+    const overallSalesFromRequestsRate =
+      demoRequested > 0 ? Math.round((salesCount / demoRequested) * 100) : 0;
+
     const languageCount = {};
     const contactsByDate = {};
 
@@ -486,6 +494,9 @@ export default function SignupAnalyticsDashboard({
       grades: gradeCount,
       statuses: statusCount,
       conversionRate,
+      demoCompletionRate,
+      salesFromCompletedRate,
+      overallSalesFromRequestsRate,
       dailyData,
       avgDailyContacts: Math.round(
         totalContacts / Math.max(dailyData.length, 1)
@@ -517,7 +528,6 @@ export default function SignupAnalyticsDashboard({
     value,
     color = "bg-blue-500",
     breakdown,
-    showRedBadge,
   }) => {
     return (
       <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-lg shadow-lg border border-gray-200 min-h-20 sm:min-h-24 flex flex-col justify-center">
@@ -649,6 +659,7 @@ export default function SignupAnalyticsDashboard({
             </div>
           </div>
         )}
+        
         {/* Top 6 Cards Row - Main Stats */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-4 mb-6">
           <SimpleStatCard
@@ -659,45 +670,47 @@ export default function SignupAnalyticsDashboard({
               { label: "Unassigned", value: processedData.unassignedContacts },
             ]}
             color="bg-blue-500"
-            showRedBadge={processedData.totalContacts <= 50}
           />
           <SimpleStatCard
             title="DEMO REQUEST"
             value={processedData.demoRequested}
             color="bg-green-500"
-            showRedBadge={
-              processedData.demoRequested <= processedData.totalContacts * 0.8
-            }
           />
           <SimpleStatCard
             title="DEMO COMPLETE"
             value={processedData.demoCompleted}
             color="bg-emerald-500"
-            showRedBadge={
-              processedData.demoCompleted <= processedData.demoRequested * 0.7
-            }
           />
           <SimpleStatCard
             title="DEMO DECLINED"
             value={processedData.demoDeclined}
             color="bg-red-500"
-            showRedBadge={
-              processedData.demoDeclined >= processedData.totalContacts * 0.2
-            }
           />
           <SimpleStatCard
             title="SALES"
             value={processedData.salesCount}
             color="bg-yellow-500"
-            showRedBadge={
-              processedData.salesCount <= processedData.totalContacts * 0.1
-            }
           />
           <SimpleStatCard
             title="CONVERSION RATE"
             value={`${processedData.conversionRate}%`}
             color="bg-purple-500"
-            showRedBadge={processedData.conversionRate <= 10}
+          />
+        </div>
+
+        {/* KPI Rates Row - New line with 3 tiles */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-4 mb-6">
+          <SimpleStatCard
+            title="Demo Completion Rate"
+            value={`${processedData.demoCompletionRate}%`}
+          />
+          <SimpleStatCard
+            title="Sales Conversion from Completed Demos"
+            value={`${processedData.salesFromCompletedRate}%`}
+          />
+          <SimpleStatCard
+            title="Overall Sales Conversion from Demo Requests"
+            value={`${processedData.overallSalesFromRequestsRate}%`}
           />
         </div>
 

@@ -276,9 +276,9 @@ export default function FreeSignupCompare({
       });
     }
 
-    // Conversion rate = Sales / Total Contacts (%), rounded
+    // Conversion rate = Sales / Demo Completed (%), rounded
     const conversionRate =
-      totalContacts > 0 ? Math.round((salesCount / totalContacts) * 100) : 0;
+      demoCompleted > 0 ? Math.round((salesCount / demoCompleted) * 100) : 0;
 
     const languageCount = {};
     const contactsByDate = {};
@@ -317,10 +317,10 @@ export default function FreeSignupCompare({
       .sort((a, b) => a.day - b.day)
       .map((day) => ({
         ...day,
-        // Per-day sales conversion
+        // Per-day sales conversion (using demoCompleted for the day)
         conversionRate:
-          day.totalContacts > 0
-            ? ((salesByDate[day.day] || 0) / day.totalContacts) * 100
+          day.demoRequested > 0
+            ? ((salesByDate[day.day] || 0) / day.demoRequested) * 100
             : 0,
         demoCompleted: day.totalContacts,
         ...Object.fromEntries(
@@ -350,13 +350,31 @@ export default function FreeSignupCompare({
     [stats, conversionStats]
   );
 
-  const SimpleStatCard = ({ title, value, subvalue, showRedBadge }) => {
-    return (
-      <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow h-24 flex flex-col justify-center">
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="text-[10px] sm:text-xs font-semibold tracking-wide text-gray-500 uppercase">
-            {title}
-          </h3>
+
+  const SimpleStatCard = ({ title, value, subvalue, isCritical = false }) => (
+    <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow h-24 flex flex-col justify-center">
+      <h3 className="text-[10px] sm:text-xs font-semibold tracking-wide text-gray-500 mb-1 uppercase">
+        {title}
+      </h3>
+      <div className={`flex items-baseline gap-2 ${isCritical ? "text-red-600" : ""}`}>
+        <div className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+          <span>{typeof value === "number" ? value.toLocaleString() : value}</span>
+          {isCritical && (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 48 48"
+              className="w-5 h-5 text-red-600"
+              aria-label="Downtrend"
+            >
+              <defs>
+                <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                  <polygon points="0 0, 6 3, 0 6" fill="currentColor" />
+                </marker>
+              </defs>
+              <polyline points="4,12 20,28 28,20 44,36" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" markerEnd="url(#arrowhead)" />
+            </svg>
+          )}
+
         </div>
         <div className="flex items-baseline gap-2">
           <div className="text-xl sm:text-2xl font-bold">
@@ -377,30 +395,17 @@ export default function FreeSignupCompare({
 
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 mb-4 sm:mb-6">
-        <SimpleStatCard
-          title="Total Contacts"
-          value={data.totalContacts}
-          showRedBadge={data.totalContacts <= 20}
-        />
-        <SimpleStatCard
-          title="Demo Request"
-          value={data.demoRequested}
-          showRedBadge={data.demoRequested <= data.totalContacts * 0.8}
-        />
-        <SimpleStatCard
-          title="Demo Complete"
-          value={data.demoCompleted}
-          showRedBadge={data.demoCompleted <= data.demoRequested * 0.7}
-        />
-        <SimpleStatCard
-          title="Demo Declined"
-          value={data.demoDeclined}
-          showRedBadge={data.demoDeclined >= data.totalContacts * 0.2}
-        />
+
+        <SimpleStatCard title="Total Contacts" value={data.totalContacts} />
+        <SimpleStatCard title="Demo Request" value={data.demoRequested} />
+        <SimpleStatCard title="Demo Complete" value={data.demoCompleted} />
+        <SimpleStatCard title="Demo Declined" value={data.demoDeclined} />
         <SimpleStatCard
           title="Sales"
           value={data.salesCount}
-          showRedBadge={data.salesCount <= data.totalContacts * 0.1}
+          subvalue={`${data.conversionRate}%`}
+          isCritical={data.conversionRate < 5}
+
         />
       </div>
     );
