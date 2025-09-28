@@ -9,6 +9,7 @@ import {
   YAxis,
   Line,
 } from "recharts";
+import AIRecommendationCards from "./AIRecommendationCards";
 
 export default function FreeSignupCompare({
   spreadsheetId,
@@ -477,6 +478,12 @@ export default function FreeSignupCompare({
           </div>
         </div>
       </div>
+      {/* AI Recommendation Cards */}
+      <AIRecommendationCards
+        dashboardType="compare"
+        data={{ sowmya, sukaina }}
+        month={selectedMonth}
+      />
     </div>
   );
 }

@@ -11,6 +11,7 @@ import {
   Line,
   ComposedChart,
 } from "recharts";
+import AIRecommendationCards from "./AIRecommendationCards";
 
 export default function SignupAnalyticsDashboard({
   spreadsheetId,
@@ -680,6 +681,13 @@ export default function SignupAnalyticsDashboard({
             color="bg-purple-500"
           />
         </div>
+
+        {/* AI Recommendation Cards */}
+        <AIRecommendationCards
+          dashboardType="freesignup"
+          data={processedData}
+          month={selectedMonth}
+        />
 
         {/* Two Charts Side by Side */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

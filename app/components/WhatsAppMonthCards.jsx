@@ -14,6 +14,7 @@ import {
   Line,
   ComposedChart,
 } from "recharts";
+import AIRecommendationCards from "./AIRecommendationCards";
 
 export default function WhatsAppDashboard({
   fallbackSpreadsheetId,
@@ -647,6 +648,13 @@ export default function WhatsAppDashboard({
             )}%)`}
           />
         </div>
+
+        {/* AI Recommendation Cards */}
+        <AIRecommendationCards
+          dashboardType="whatsapp"
+          data={processedData}
+          month={month}
+        />
 
         {/* Charts Side by Side on Desktop, Stacked on Mobile */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
