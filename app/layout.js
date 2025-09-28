@@ -10,7 +10,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <head />
       <body className="min-h-screen bg-gray-50 text-gray-900">
-        <main className="max-w-6xl mx-auto px-4 py-4">{children}</main>
+        <main className="">{children}</main>
       </body>
     </html>
   );

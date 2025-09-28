@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.3",
     "chart.js": "^4.5.0",
@@ -22,7 +23,8 @@
     "react-chartjs-2": "^5.3.0",
     "react-dom": "19.1.0",
     "recharts": "^3.2.1",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "use-debounce": "^10.0.6"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

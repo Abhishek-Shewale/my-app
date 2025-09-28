@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { TrendingDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
   BarChart,
@@ -12,6 +11,7 @@ import {
   Line,
   ComposedChart,
 } from "recharts";
+import AIRecommendationCards from "./AIRecommendationCards";
 
 export default function SignupAnalyticsDashboard({
   spreadsheetId,
@@ -528,30 +528,30 @@ export default function SignupAnalyticsDashboard({
     value,
     color = "bg-blue-500",
     breakdown,
-    isCritical = false,
-  }) => (
-    <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-lg shadow-lg border border-gray-200 min-h-20 sm:min-h-24 flex flex-col justify-center">
-      <h3 className="text-xs sm:text-sm font-medium mb-1 sm:mb-2 text-gray-600">
-        {title}
-      </h3>
-      <div className={`text-lg sm:text-2xl font-bold mb-1 flex items-center gap-2 ${isCritical ? "text-red-600" : ""}`}>
-        <span>{typeof value === "number" ? value.toLocaleString() : value}</span>
-        {isCritical && (
-          <TrendingDown className="w-5 h-5 text-red-600" strokeWidth={3} aria-label="Downtrend" />
+  }) => {
+    return (
+      <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-lg shadow-lg border border-gray-200 min-h-20 sm:min-h-24 flex flex-col justify-center">
+        <div className="flex items-center justify-between mb-1 sm:mb-2">
+          <h3 className="text-xs sm:text-sm font-medium text-gray-600">
+            {title}
+          </h3>
+        </div>
+        <div className="text-lg sm:text-2xl font-bold mb-1">
+          {typeof value === "number" ? value.toLocaleString() : value}
+        </div>
+        {breakdown && (
+          <div className="text-xs text-gray-500 space-y-0.5">
+            {breakdown.map((item, index) => (
+              <div key={index} className="flex justify-between">
+                <span>{item.label}</span>
+                <span className="font-medium">{item.value}</span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
-      {breakdown && (
-        <div className="text-xs text-gray-500 space-y-0.5">
-          {breakdown.map((item, index) => (
-            <div key={index} className="flex justify-between">
-              <span>{item.label}</span>
-              <span className="font-medium">{item.value}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+    );
+  };
 
   // OPTIMIZED: Show skeleton instead of spinner when data exists but loading
   const LoadingState = () => {
@@ -659,6 +659,7 @@ export default function SignupAnalyticsDashboard({
             </div>
           </div>
         )}
+        
         {/* Top 6 Cards Row - Main Stats */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-4 mb-6">
           <SimpleStatCard
@@ -689,13 +690,11 @@ export default function SignupAnalyticsDashboard({
             title="SALES"
             value={processedData.salesCount}
             color="bg-yellow-500"
-            isCritical={processedData.conversionRate < 5}
           />
           <SimpleStatCard
             title="CONVERSION RATE"
             value={`${processedData.conversionRate}%`}
             color="bg-purple-500"
-            isCritical={processedData.conversionRate < 5}
           />
         </div>
 
@@ -704,19 +703,23 @@ export default function SignupAnalyticsDashboard({
           <SimpleStatCard
             title="Demo Completion Rate"
             value={`${processedData.demoCompletionRate}%`}
-            isCritical={processedData.demoCompletionRate < 5}
           />
           <SimpleStatCard
             title="Sales Conversion from Completed Demos"
             value={`${processedData.salesFromCompletedRate}%`}
-            isCritical={processedData.salesFromCompletedRate < 5}
           />
           <SimpleStatCard
             title="Overall Sales Conversion from Demo Requests"
             value={`${processedData.overallSalesFromRequestsRate}%`}
-            isCritical={processedData.overallSalesFromRequestsRate < 5}
           />
         </div>
+
+        {/* AI Recommendation Cards */}
+        <AIRecommendationCards
+          dashboardType="freesignup"
+          data={processedData}
+          month={selectedMonth}
+        />
 
         {/* Two Charts Side by Side */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -14,7 +14,11 @@ import {
   Line,
   ComposedChart,
 } from "recharts";
+
+import AIRecommendationCards from "./AIRecommendationCards";
+
 import { TrendingDown } from "lucide-react";
+
 
 export default function WhatsAppDashboard({
   fallbackSpreadsheetId,
@@ -550,6 +554,7 @@ export default function WhatsAppDashboard({
     };
   }, [stats, demoStatusData, freeSignupData]);
 
+
   const StatCard = ({ title, value, className = "", isCritical = false }) => (
     <div
       className={`bg-white text-gray-800 p-3 rounded-lg shadow-md border border-gray-200 ${className}`}
@@ -562,9 +567,10 @@ export default function WhatsAppDashboard({
         {isCritical && (
           <TrendingDown className="w-5 h-5 text-red-600" strokeWidth={3} aria-label="Downtrend" />
         )}
+
       </div>
-    </div>
-  );
+    );
+  };
 
   // OPTIMIZED: Show skeleton instead of spinner when data exists but loading
   const LoadingState = () => {
@@ -604,11 +610,6 @@ export default function WhatsAppDashboard({
     <div className="p-4 bg-gray-100 min-h-screen">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
-            DEPLOYH.AI PERFORMANCE DASHBOARD
-          </h1>
-        </div>
         <div className="flex items-center gap-3">
           {!hideNavButtons && (
             <button
@@ -675,17 +676,23 @@ export default function WhatsAppDashboard({
           <StatCard
             title="Total Contacts"
             value={processedData.totalContacts}
+            showRedBadge={processedData.totalContacts <= 50}
           />
           <StatCard
             title="Demo Requested"
             value={`${processedData.demoRequested} (${processedData.conversionRate}%)`}
+
             isCritical={processedData.conversionRate < 5}
+
           />
           <StatCard
             title="Demo Declined"
             value={`${processedData.demoNo} (${
               100 - processedData.conversionRate
             }%)`}
+            showRedBadge={
+              processedData.demoNo >= processedData.totalContacts * 0.2
+            }
           />
           <StatCard
             title="Demo Completed"
@@ -695,7 +702,9 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
+
             isCritical={!!demoStatusData && processedData.demoConversionRate < 5}
+
           />
           <StatCard
             title="Conversion Rate (Demo)"
@@ -705,14 +714,23 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
+
             isCritical={!!demoStatusData && processedData.demoConversionRate < 5}
           />
           <StatCard
             title="Free Signups"
             value={`${processedData.freeSignupCount} (${freeSignupPercent}%)`}
             isCritical={freeSignupPercent < 5}
+
           />
         </div>
+
+        {/* AI Recommendation Cards */}
+        <AIRecommendationCards
+          dashboardType="whatsapp"
+          data={processedData}
+          month={month}
+        />
 
         {/* Charts Side by Side on Desktop, Stacked on Mobile */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

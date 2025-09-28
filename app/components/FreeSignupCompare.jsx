@@ -9,6 +9,7 @@ import {
   YAxis,
   Line,
 } from "recharts";
+import AIRecommendationCards from "./AIRecommendationCards";
 
 export default function FreeSignupCompare({
   spreadsheetId,
@@ -349,6 +350,7 @@ export default function FreeSignupCompare({
     [stats, conversionStats]
   );
 
+
   const SimpleStatCard = ({ title, value, subvalue, isCritical = false }) => (
     <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow h-24 flex flex-col justify-center">
       <h3 className="text-[10px] sm:text-xs font-semibold tracking-wide text-gray-500 mb-1 uppercase">
@@ -372,20 +374,28 @@ export default function FreeSignupCompare({
               <polyline points="4,12 20,28 28,20 44,36" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" markerEnd="url(#arrowhead)" />
             </svg>
           )}
-        </div>
-        {subvalue ? (
-          <div className="text-[11px] sm:text-xs text-gray-500 font-medium">
-            {subvalue}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
 
-  const TopFive = ({ data }) => {
+        </div>
+        <div className="flex items-baseline gap-2">
+          <div className="text-xl sm:text-2xl font-bold">
+            {typeof value === "number" ? value.toLocaleString() : value}
+          </div>
+          {subvalue ? (
+            <div className="text-[11px] sm:text-xs text-gray-500 font-medium">
+              {subvalue}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+
+  const TopFive = ({ data, assigneeName }) => {
     if (!data) return null;
+
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 mb-4 sm:mb-6">
+
         <SimpleStatCard title="Total Contacts" value={data.totalContacts} />
         <SimpleStatCard title="Demo Request" value={data.demoRequested} />
         <SimpleStatCard title="Demo Complete" value={data.demoCompleted} />
@@ -395,6 +405,7 @@ export default function FreeSignupCompare({
           value={data.salesCount}
           subvalue={`${data.conversionRate}%`}
           isCritical={data.conversionRate < 5}
+
         />
       </div>
     );
@@ -431,8 +442,24 @@ export default function FreeSignupCompare({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Sowmya Column */}
         <div className="bg-gray-50 rounded-xl p-3 sm:p-4">
-          <h2 className="text-base sm:text-lg font-semibold mb-3">Sowmya</h2>
-          <TopFive data={sowmya} />
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base sm:text-lg font-semibold">Sowmya</h2>
+            {sowmya && (
+              <div className="flex items-center gap-2">
+                {sowmya.totalContacts > 20 && (
+                  <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded">
+                    +5%
+                  </span>
+                )}
+                {sowmya.totalContacts <= 20 && (
+                  <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded">
+                    -5%
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <TopFive data={sowmya} assigneeName="Sowmya" />
           <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
             <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800">
               DAILY LEAD GENERATION
@@ -465,8 +492,24 @@ export default function FreeSignupCompare({
 
         {/* Sukaina Column */}
         <div className="bg-gray-50 rounded-xl p-3 sm:p-4">
-          <h2 className="text-base sm:text-lg font-semibold mb-3">Sukaina</h2>
-          <TopFive data={sukaina} />
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base sm:text-lg font-semibold">Sukaina</h2>
+            {sukaina && (
+              <div className="flex items-center gap-2">
+                {sukaina.totalContacts > 20 && (
+                  <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded">
+                    +5%
+                  </span>
+                )}
+                {sukaina.totalContacts <= 20 && (
+                  <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded">
+                    -5%
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <TopFive data={sukaina} assigneeName="Sukaina" />
           <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
             <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800">
               DAILY LEAD GENERATION
@@ -497,6 +540,12 @@ export default function FreeSignupCompare({
           </div>
         </div>
       </div>
+      {/* AI Recommendation Cards */}
+      <AIRecommendationCards
+        dashboardType="compare"
+        data={{ sowmya, sukaina }}
+        month={selectedMonth}
+      />
     </div>
   );
 }
