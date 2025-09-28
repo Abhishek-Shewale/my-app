@@ -568,6 +568,21 @@ export default function WhatsAppDashboard({
           <TrendingDown className="w-5 h-5 text-red-600" strokeWidth={3} aria-label="Downtrend" />
         )}
 
+
+  const StatCard = ({ title, value, className = "" }) => {
+    return (
+      <div
+        className={`bg-white text-gray-800 p-3 rounded-lg shadow-md border border-gray-200 ${className}`}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-xs font-medium text-gray-600 uppercase">
+            {title}
+          </h3>
+        </div>
+        <div className="text-xl font-bold">
+          {typeof value === "number" ? value.toLocaleString() : value}
+        </div>
+
       </div>
     );
   };
@@ -676,11 +691,11 @@ export default function WhatsAppDashboard({
           <StatCard
             title="Total Contacts"
             value={processedData.totalContacts}
-            showRedBadge={processedData.totalContacts <= 50}
           />
           <StatCard
             title="Demo Requested"
             value={`${processedData.demoRequested} (${processedData.conversionRate}%)`}
+
 
             isCritical={processedData.conversionRate < 5}
 
@@ -690,9 +705,6 @@ export default function WhatsAppDashboard({
             value={`${processedData.demoNo} (${
               100 - processedData.conversionRate
             }%)`}
-            showRedBadge={
-              processedData.demoNo >= processedData.totalContacts * 0.2
-            }
           />
           <StatCard
             title="Demo Completed"
@@ -703,7 +715,9 @@ export default function WhatsAppDashboard({
             }
             className={!demoStatusData ? "text-gray-500" : ""}
 
+
             isCritical={!!demoStatusData && processedData.demoConversionRate < 5}
+
 
           />
           <StatCard
@@ -715,12 +729,20 @@ export default function WhatsAppDashboard({
             }
             className={!demoStatusData ? "text-gray-500" : ""}
 
+          />
+          <StatCard
+            title={`${mostUsedLanguage} Users`}
+            value={`${mostUsedCount} (${Math.round(
+              (mostUsedCount / processedData.totalContacts) * 100
+            )}%)`}
+
             isCritical={!!demoStatusData && processedData.demoConversionRate < 5}
           />
           <StatCard
             title="Free Signups"
             value={`${processedData.freeSignupCount} (${freeSignupPercent}%)`}
             isCritical={freeSignupPercent < 5}
+
 
           />
         </div>

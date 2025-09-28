@@ -357,6 +357,10 @@ export default function FreeSignupCompare({
         {title}
       </h3>
       <div className={`flex items-baseline gap-2 ${isCritical ? "text-red-600" : ""}`}>
+
+        <div className="text-xl sm:text-2xl font-bold">
+          {typeof value === "number" ? value.toLocaleString() : value}
+
         <div className="text-xl sm:text-2xl font-bold flex items-center gap-2">
           <span>{typeof value === "number" ? value.toLocaleString() : value}</span>
           {isCritical && (
@@ -375,26 +379,38 @@ export default function FreeSignupCompare({
             </svg>
           )}
 
+
         </div>
-        <div className="flex items-baseline gap-2">
-          <div className="text-xl sm:text-2xl font-bold">
-            {typeof value === "number" ? value.toLocaleString() : value}
+        {isCritical && (
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 48 48"
+            className="w-5 h-5 text-red-600"
+            aria-label="Downtrend"
+          >
+            <defs>
+              <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                <polygon points="0 0, 6 3, 0 6" fill="currentColor" />
+              </marker>
+            </defs>
+            <polyline points="4,12 20,28 28,20 44,36" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" markerEnd="url(#arrowhead)" />
+          </svg>
+        )}
+        {subvalue && (
+          <div className="text-[11px] sm:text-xs text-gray-500 font-medium">
+            {subvalue}
           </div>
-          {subvalue ? (
-            <div className="text-[11px] sm:text-xs text-gray-500 font-medium">
-              {subvalue}
-            </div>
-          ) : null}
-        </div>
+        )}
       </div>
-    );
-  };
+    </div>
+  );
 
   const TopFive = ({ data, assigneeName }) => {
     if (!data) return null;
 
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 mb-4 sm:mb-6">
+
 
         <SimpleStatCard title="Total Contacts" value={data.totalContacts} />
         <SimpleStatCard title="Demo Request" value={data.demoRequested} />
@@ -540,6 +556,7 @@ export default function FreeSignupCompare({
           </div>
         </div>
       </div>
+      
       {/* AI Recommendation Cards */}
       <AIRecommendationCards
         dashboardType="compare"
