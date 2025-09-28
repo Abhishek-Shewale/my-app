@@ -26,6 +26,7 @@ export default function WhatsAppDashboard({
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(null);
   const [demoStatusData, setDemoStatusData] = useState(null);
+  const [freeSignupData, setFreeSignupData] = useState(null);
   const [error, setError] = useState(null);
   const [navigating, setNavigating] = useState(false);
 
@@ -160,7 +161,7 @@ export default function WhatsAppDashboard({
     }
   };
 
-  // OPTIMIZED: Fetch both main data and demo status data
+  // OPTIMIZED: Fetch main data, demo status data and free signup data
   useEffect(() => {
     if (!month) return;
 
@@ -172,21 +173,25 @@ export default function WhatsAppDashboard({
       `demo-status-${month}`,
       "1vbMaoxQ-4unVZ7OIgizwHl3hl6bxRlwEhN-m94iLr8k"
     );
+    const cachedFreeSignup = getCachedData(
+      `free-signup-${month}`,
+      "1rWrkTM6Mh0bkwUpk1VsF3ReGkOk-piIoHDeCobSDHKY"
+    );
 
-    if (cachedStats && cachedDemoStatus) {
+    if (cachedStats && cachedDemoStatus && cachedFreeSignup) {
       setStats(cachedStats);
       setDemoStatusData(cachedDemoStatus);
+      setFreeSignupData(cachedFreeSignup);
       setError(null);
       return;
     }
 
-    // Only set loading if no cached data
     setLoading(true);
     setError(null);
 
     const controller = new AbortController();
 
-    // Fetch both APIs in parallel
+    // Fetch all APIs in parallel
     const fetchAllData = async () => {
       try {
         // Main spreadsheet data
@@ -195,7 +200,9 @@ export default function WhatsAppDashboard({
         mainUrl.searchParams.set("month", month);
         mainUrl.searchParams.set(
           "fields",
-          ["timestamp", "language", "demoRequested", "number", "name"].join(",")
+          ["timestamp", "language", "demoRequested", "number", "name"].join(
+            ","
+          )
         );
 
         // Demo status data
@@ -205,12 +212,26 @@ export default function WhatsAppDashboard({
           "1vbMaoxQ-4unVZ7OIgizwHl3hl6bxRlwEhN-m94iLr8k"
         );
 
-        const [mainRes, demoRes] = await Promise.all([
+        // Free signup data (phones only) for the selected month
+        const signupSpreadsheetId = "1rWrkTM6Mh0bkwUpk1VsF3ReGkOk-piIoHDeCobSDHKY";
+        const freeSignupUrl = new URL("/api/freesignupsheet", window.location.origin);
+        freeSignupUrl.searchParams.set("spreadsheetId", signupSpreadsheetId);
+        freeSignupUrl.searchParams.set(
+          "monthYear",
+          month.split("-")[1] + "-" + month.split("-")[0]
+        );
+        freeSignupUrl.searchParams.set("fields", "phone");
+
+        const [mainRes, demoRes, freeSignupRes] = await Promise.all([
           fetch(mainUrl.toString(), {
             signal: controller.signal,
             timeout: 10000,
           }),
           fetch(demoUrl.toString(), {
+            signal: controller.signal,
+            timeout: 10000,
+          }),
+          fetch(freeSignupUrl.toString(), {
             signal: controller.signal,
             timeout: 10000,
           }),
@@ -220,6 +241,7 @@ export default function WhatsAppDashboard({
 
         const mainData = await mainRes.json();
         let demoData = null;
+        let freeSignup = null;
 
         if (demoRes.ok) {
           demoData = await demoRes.json();
@@ -234,9 +256,23 @@ export default function WhatsAppDashboard({
           );
         }
 
+        if (freeSignupRes.ok) {
+          freeSignup = await freeSignupRes.json();
+          cacheData(
+            `free-signup-${month}`,
+            "1rWrkTM6Mh0bkwUpk1VsF3ReGkOk-piIoHDeCobSDHKY",
+            freeSignup
+          );
+        } else {
+          console.warn(
+            "Free signup API failed, continuing without free signup data"
+          );
+        }
+
         cacheData(month, spreadsheetId, mainData);
         setStats(mainData);
         setDemoStatusData(demoData);
+        setFreeSignupData(freeSignup);
         setError(null);
       } catch (err) {
         if (err.name !== "AbortError") {
@@ -469,11 +505,32 @@ export default function WhatsAppDashboard({
     console.log("Final daily data for chart:", dailyData); // Debug log
     console.log("Demo completed count:", demoCompleted); // Debug log
 
-    // Find the most used language
-    const mostUsedLanguage = Object.entries(sortedLanguages)[0] || [
-      "English",
-      0,
-    ];
+    // Free Signup comparison
+    // Normalize function: ensure all numbers start with '91' and are digits only
+    const normalizePhone = (val) => {
+      if (!val) return "";
+      const digits = ("" + val).replace(/\D+/g, "");
+      // take last 10 digits as base local number
+      const last10 = digits.slice(-10);
+      if (!last10) return "";
+      return "91" + last10;
+    };
+
+    // Build a Set of signup phones (normalized to start with 91)
+    const signupPhoneSet = new Set(
+      (freeSignupData?.contacts || [])
+        .map((c) => normalizePhone(c.phone))
+        .filter(Boolean)
+    );
+
+    // Count how many mastersheet contacts have phones present in signup set
+    let freeSignupCount = 0;
+    stats.contacts.forEach((c) => {
+      const phone = normalizePhone(
+        c.number || c.phone || c.phoneNumber || c.contact || ""
+      );
+      if (phone && signupPhoneSet.has(phone)) freeSignupCount += 1;
+    });
 
     return {
       totalContacts,
@@ -488,9 +545,9 @@ export default function WhatsAppDashboard({
         totalContacts / Math.max(dailyData.length, 1)
       ),
       avgDailyDemos: Math.round(demoRequested / Math.max(dailyData.length, 1)),
-      mostUsedLanguage: mostUsedLanguage,
+      freeSignupCount,
     };
-  }, [stats, demoStatusData]);
+  }, [stats, demoStatusData, freeSignupData]);
 
   const StatCard = ({ title, value, className = "" }) => (
     <div
@@ -534,7 +591,10 @@ export default function WhatsAppDashboard({
   if (error) return <div className="p-4 text-red-600">Error: {error}</div>;
   if (!processedData) return <div className="p-4">Loading...</div>;
 
-  const [mostUsedLanguage, mostUsedCount] = processedData.mostUsedLanguage;
+  // Derived percentages
+  const freeSignupPercent = processedData.totalContacts
+    ? Math.round((processedData.freeSignupCount / processedData.totalContacts) * 100)
+    : 0;
 
   return (
     <div className="p-4 bg-gray-100 min-h-screen">
@@ -641,10 +701,8 @@ export default function WhatsAppDashboard({
             className={!demoStatusData ? "text-gray-500" : ""}
           />
           <StatCard
-            title={`${mostUsedLanguage} Users`}
-            value={`${mostUsedCount} (${Math.round(
-              (mostUsedCount / processedData.totalContacts) * 100
-            )}%)`}
+            title="Free Signups"
+            value={`${processedData.freeSignupCount} (${freeSignupPercent}%)`}
           />
         </div>
 
