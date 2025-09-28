@@ -517,26 +517,31 @@ export default function SignupAnalyticsDashboard({
     value,
     color = "bg-blue-500",
     breakdown,
-  }) => (
-    <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-lg shadow-lg border border-gray-200 min-h-20 sm:min-h-24 flex flex-col justify-center">
-      <h3 className="text-xs sm:text-sm font-medium mb-1 sm:mb-2 text-gray-600">
-        {title}
-      </h3>
-      <div className="text-lg sm:text-2xl font-bold mb-1">
-        {typeof value === "number" ? value.toLocaleString() : value}
-      </div>
-      {breakdown && (
-        <div className="text-xs text-gray-500 space-y-0.5">
-          {breakdown.map((item, index) => (
-            <div key={index} className="flex justify-between">
-              <span>{item.label}</span>
-              <span className="font-medium">{item.value}</span>
-            </div>
-          ))}
+    showRedBadge,
+  }) => {
+    return (
+      <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-lg shadow-lg border border-gray-200 min-h-20 sm:min-h-24 flex flex-col justify-center">
+        <div className="flex items-center justify-between mb-1 sm:mb-2">
+          <h3 className="text-xs sm:text-sm font-medium text-gray-600">
+            {title}
+          </h3>
         </div>
-      )}
-    </div>
-  );
+        <div className="text-lg sm:text-2xl font-bold mb-1">
+          {typeof value === "number" ? value.toLocaleString() : value}
+        </div>
+        {breakdown && (
+          <div className="text-xs text-gray-500 space-y-0.5">
+            {breakdown.map((item, index) => (
+              <div key={index} className="flex justify-between">
+                <span>{item.label}</span>
+                <span className="font-medium">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // OPTIMIZED: Show skeleton instead of spinner when data exists but loading
   const LoadingState = () => {
@@ -654,31 +659,45 @@ export default function SignupAnalyticsDashboard({
               { label: "Unassigned", value: processedData.unassignedContacts },
             ]}
             color="bg-blue-500"
+            showRedBadge={processedData.totalContacts <= 50}
           />
           <SimpleStatCard
             title="DEMO REQUEST"
             value={processedData.demoRequested}
             color="bg-green-500"
+            showRedBadge={
+              processedData.demoRequested <= processedData.totalContacts * 0.8
+            }
           />
           <SimpleStatCard
             title="DEMO COMPLETE"
             value={processedData.demoCompleted}
             color="bg-emerald-500"
+            showRedBadge={
+              processedData.demoCompleted <= processedData.demoRequested * 0.7
+            }
           />
           <SimpleStatCard
             title="DEMO DECLINED"
             value={processedData.demoDeclined}
             color="bg-red-500"
+            showRedBadge={
+              processedData.demoDeclined >= processedData.totalContacts * 0.2
+            }
           />
           <SimpleStatCard
             title="SALES"
             value={processedData.salesCount}
             color="bg-yellow-500"
+            showRedBadge={
+              processedData.salesCount <= processedData.totalContacts * 0.1
+            }
           />
           <SimpleStatCard
             title="CONVERSION RATE"
             value={`${processedData.conversionRate}%`}
             color="bg-purple-500"
+            showRedBadge={processedData.conversionRate <= 10}
           />
         </div>
 

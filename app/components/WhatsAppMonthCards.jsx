@@ -493,18 +493,22 @@ export default function WhatsAppDashboard({
     };
   }, [stats, demoStatusData]);
 
-  const StatCard = ({ title, value, className = "" }) => (
-    <div
-      className={`bg-white text-gray-800 p-3 rounded-lg shadow-md border border-gray-200 ${className}`}
-    >
-      <h3 className="text-xs font-medium mb-1 text-gray-600 uppercase">
-        {title}
-      </h3>
-      <div className="text-xl font-bold">
-        {typeof value === "number" ? value.toLocaleString() : value}
+  const StatCard = ({ title, value, className = "", showRedBadge }) => {
+    return (
+      <div
+        className={`bg-white text-gray-800 p-3 rounded-lg shadow-md border border-gray-200 ${className}`}
+      >
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-xs font-medium text-gray-600 uppercase">
+            {title}
+          </h3>
+        </div>
+        <div className="text-xl font-bold">
+          {typeof value === "number" ? value.toLocaleString() : value}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // OPTIMIZED: Show skeleton instead of spinner when data exists but loading
   const LoadingState = () => {
@@ -541,11 +545,6 @@ export default function WhatsAppDashboard({
     <div className="p-4 bg-gray-100 min-h-screen">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
-            DEPLOYH.AI PERFORMANCE DASHBOARD
-          </h1>
-        </div>
         <div className="flex items-center gap-3">
           {!hideNavButtons && (
             <button
@@ -612,16 +611,23 @@ export default function WhatsAppDashboard({
           <StatCard
             title="Total Contacts"
             value={processedData.totalContacts}
+            showRedBadge={processedData.totalContacts <= 50}
           />
           <StatCard
             title="Demo Requested"
             value={`${processedData.demoRequested} (${processedData.conversionRate}%)`}
+            showRedBadge={
+              processedData.demoRequested <= processedData.totalContacts * 0.8
+            }
           />
           <StatCard
             title="Demo Declined"
             value={`${processedData.demoNo} (${
               100 - processedData.conversionRate
             }%)`}
+            showRedBadge={
+              processedData.demoNo >= processedData.totalContacts * 0.2
+            }
           />
           <StatCard
             title="Demo Completed"
@@ -631,6 +637,10 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
+            showRedBadge={
+              demoStatusData &&
+              processedData.demoCompleted <= processedData.demoRequested * 0.7
+            }
           />
           <StatCard
             title="Conversion Rate (Demo)"
@@ -640,12 +650,16 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
+            showRedBadge={
+              demoStatusData && processedData.demoConversionRate <= 70
+            }
           />
           <StatCard
             title={`${mostUsedLanguage} Users`}
             value={`${mostUsedCount} (${Math.round(
               (mostUsedCount / processedData.totalContacts) * 100
             )}%)`}
+            showRedBadge={mostUsedCount <= processedData.totalContacts * 0.3}
           />
         </div>
 

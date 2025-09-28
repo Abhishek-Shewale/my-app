@@ -13,29 +13,51 @@ export async function POST(request) {
 
         // Create dashboard-specific prompts
         const getPrompt = (type, data) => {
-            const basePrompt = `You are an education sales coach specializing in selling to PARENTS and STUDENTS (grades 4-12). Analyze the sales team data and provide exactly 6-7 focused, actionable recommendations for EDUCATION SALES TEAM IMPROVEMENT in JSON format. Return ONLY a valid JSON object with this structure:
+            const basePrompt = `You are an education sales coach specializing in selling to PARENTS and STUDENTS (grades 4-12). Analyze the sales team data and provide exactly 3 focused, actionable recommendations for EDUCATION SALES TEAM IMPROVEMENT in JSON format. Return ONLY a valid JSON object with this structure:
       {
         "currentWeek": [
-          "Parent conversation tip 1",
-          "Student engagement strategy 2", 
-          "Education objection handling 3",
-          "Academic progress discussion 4",
-          "Parent concern addressing 5",
-          "Student motivation technique 6"
+          "Today's Action Item 1: Specific daily target with concrete steps",
+          "Today's Action Item 2: Specific daily target with concrete steps", 
+          "Today's Action Item 3: Specific daily target with concrete steps"
         ],
         "nextWeek": [
-          "Parent conversion target 1",
-          "Student engagement goal 2",
-          "Academic improvement focus 3", 
-          "Parent satisfaction metric 4",
-          "Student success story 5",
-          "Education sales challenge 6"
+          "Weekly Goal 1: Specific target for the week",
+          "Weekly Goal 2: Specific target for the week",
+          "Weekly Goal 3: Specific target for the week"
         ]
       }
       
-      Focus ONLY on: parent conversations, student engagement, academic progress discussions, education objections, parent concerns, student motivation, grade-specific selling. 
+      FORMAT REQUIREMENTS:
+      - Each recommendation must include SPECIFIC NUMBERS and TARGETS
+      - Use format: "Today: Make 10 calls, get 2 customers, complete 3 demos"
+      - Include concrete action steps like "Call 5 parents in the morning, follow up with 3 demos in afternoon"
+      - Focus on DAILY TARGETS and WEEKLY GOALS
       
-      IMPORTANT: Include actual conversation scripts and phrases to use with parents. Format like: "Ask parents: 'What subjects is your child struggling with?'" or "Say to parents: 'How are your child's current grades?'"
+      EXAMPLES OF GOOD RECOMMENDATIONS:
+      - "Today: Make 10 calls to parents, target 2 new customers, complete 3 demos by 5 PM"
+      - "Today: Call 5 parents before lunch, follow up with 2 scheduled demos, send 3 WhatsApp messages"
+      - "This week: Target 15 new parent contacts, complete 8 demos, close 3 sales"
+      
+      ROLE BOUNDARIES - ONLY provide recommendations for:
+      - Daily call targets and customer acquisition goals
+      - Demo scheduling and completion targets
+      - Parent contact and follow-up action items
+      - Weekly sales targets and performance goals
+      - Specific conversation scripts and approaches
+      
+      DO NOT provide recommendations about:
+      - Bonuses, rewards, or compensation
+      - Gamification systems
+      - Management decisions
+      - HR policies
+      - Team incentives or competitions
+      - Salary or financial rewards
+      
+      ANALYZE CURRENT STATS: Look at conversion rates, demo completion rates, language performance, assignee performance, and identify specific bottlenecks.
+      
+      IMPROVEMENT FOCUS: Provide specific daily and weekly targets to increase conversion from current rate to higher rates, improve demo effectiveness, optimize language targeting, enhance follow-up processes.
+      
+      IMPORTANT: Each recommendation must include SPECIFIC NUMBERS and ACTIONABLE STEPS. Format like: "Today: Make X calls, get Y customers, complete Z demos" or "This week: Target X new contacts, complete Y demos, close Z sales"
       
       Keep each recommendation short (1-2 sentences max) and actionable for education sales team.`;
 
@@ -54,7 +76,7 @@ export async function POST(request) {
           - Parent Languages: ${JSON.stringify(data.languages || {})}
           - Average Daily Parent Contacts: ${data.avgDailyContacts || 0}
           
-          Focus on: parent conversation techniques, student academic needs, education objections, parent concerns about grades, student motivation, academic progress discussions.`;
+          Focus on: STATISTICAL ANALYSIS of current ${data.conversionRate || 0}% conversion rate and CONCRETE STRATEGIES to improve to 15-25%. Analyze language performance (${JSON.stringify(data.languages || {})}), assignee performance (${data.assignedContacts || 0} assigned vs ${data.unassignedContacts || 0} unassigned), and demo effectiveness (${data.demoRequested || 0} requested, ${data.demoCompleted || 0} completed).`;
 
                 case 'compare':
                     return `${basePrompt}
@@ -63,7 +85,7 @@ export async function POST(request) {
           - Sowmya's Parent Conversion: ${JSON.stringify(data.sowmya || {})}
           - Sukaina's Parent Conversion: ${JSON.stringify(data.sukaina || {})}
           
-          Focus on: individual parent conversation skills, student engagement techniques, academic progress discussions, parent concern handling, education sales best practices, team collaboration on parent objections.`;
+          Focus on: STATISTICAL COMPARISON between Sowmya (${JSON.stringify(data.sowmya || {})}) and Sukaina (${JSON.stringify(data.sukaina || {})}) performance. Identify which team member performs better in conversions, demos, and language targeting. Provide specific strategies to improve underperforming areas.`;
 
                 case 'whatsapp':
                     return `${basePrompt}
@@ -77,7 +99,7 @@ export async function POST(request) {
           - Most Used Parent Language: ${data.mostUsedLanguage?.[0] || 'N/A'} (${data.mostUsedLanguage?.[1] || 0} parents)
           - Average Daily Parent Contacts: ${data.avgDailyContacts || 0}
           
-          Focus on: WhatsApp parent conversations, education demo presentations, language-specific parent communication, student academic needs assessment, parent follow-up timing, education enrollment conversion.`;
+          Focus on: WHATSAPP STATISTICAL ANALYSIS of ${data.demoConversionRate || 0}% demo conversion rate and strategies to improve to 20-30%. Analyze language performance (${JSON.stringify(data.languages || {})}), most effective language (${data.mostUsedLanguage?.[0] || 'N/A'} with ${data.mostUsedLanguage?.[1] || 0} users), and demo completion rates (${data.demoRequested || 0} requested, ${data.demoCompleted || 0} completed).`;
 
                 default:
                     return `${basePrompt} Analyze this education sales data: ${JSON.stringify(data)}`;
@@ -135,6 +157,30 @@ export async function POST(request) {
                 nextWeek: [text.substring(200, 400) + "..."] || ["No targets available"]
             };
         }
+
+        // Filter out inappropriate recommendations
+        const filterInappropriateRecommendations = (recommendations) => {
+            const inappropriateKeywords = [
+                'bonus', 'reward', 'gamify', 'gamification', 'incentive', 'compensation',
+                'salary', 'pay', 'money', 'financial', 'prize', 'competition', 'contest',
+                'management', 'hr', 'policy', 'decision', 'admin', 'administrative'
+            ];
+
+            const filterArray = (arr) => {
+                return arr.filter(rec => {
+                    const lowerRec = rec.toLowerCase();
+                    return !inappropriateKeywords.some(keyword => lowerRec.includes(keyword));
+                });
+            };
+
+            return {
+                currentWeek: filterArray(recommendations.currentWeek || []),
+                nextWeek: filterArray(recommendations.nextWeek || [])
+            };
+        };
+
+        // Apply filtering
+        recommendations = filterInappropriateRecommendations(recommendations);
 
         return NextResponse.json({
             recommendations,

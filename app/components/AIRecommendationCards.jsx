@@ -30,9 +30,9 @@ export default function AIRecommendationCards({
         if (cached) {
           const { currentWeek, nextWeek, timestamp } = JSON.parse(cached);
           const now = new Date().getTime();
-          const fifteenMinutesInMs = 15 * 60 * 1000; // 15 minutes cache
+          const oneDayInMs = 24 * 60 * 60 * 1000; // 24 hours cache
 
-          if (now - timestamp < fifteenMinutesInMs) {
+          if (now - timestamp < oneDayInMs) {
             setCurrentWeekRecommendations(currentWeek || "");
             setNextWeekRecommendations(nextWeek || "");
             setLoading(false);
@@ -74,18 +74,48 @@ export default function AIRecommendationCards({
           currentWeekFormatted = recommendations.currentWeek
             .map((item, index) => {
               // Check if item contains conversation script
-              if (
-                item.includes('"') ||
-                item.includes("Ask") ||
-                item.includes("Say")
-              ) {
+              const hasQuotes = item.includes('"');
+              const hasAsk = item.includes("Ask");
+              const hasSay = item.includes("Say");
+
+              if (hasQuotes || hasAsk || hasSay) {
+                // Extract conversation script more accurately
+                let title = item;
+                let script = "";
+
+                if (hasQuotes) {
+                  const quoteMatch = item.match(/"([^"]+)"/);
+                  if (quoteMatch) {
+                    script = quoteMatch[1];
+                    title = item.replace(/"([^"]+)"/, "").trim();
+                  }
+                } else if (hasAsk) {
+                  const askMatch = item.match(/Ask[^:]*:\s*["']([^"']+)["']/);
+                  if (askMatch) {
+                    script = askMatch[1];
+                    title = item
+                      .replace(/Ask[^:]*:\s*["']([^"']+)["']/, "")
+                      .trim();
+                  }
+                } else if (hasSay) {
+                  const sayMatch = item.match(/Say[^:]*:\s*["']([^"']+)["']/);
+                  if (sayMatch) {
+                    script = sayMatch[1];
+                    title = item
+                      .replace(/Say[^:]*:\s*["']([^"']+)["']/, "")
+                      .trim();
+                  }
+                }
+
                 return `<div class="mb-3">
                     <h4 class="font-semibold text-blue-600 mb-1">${
                       index + 1
-                    }. ${item.split('"')[0]?.trim() || item}</h4>
-                    <div class="bg-blue-50 p-2 rounded text-sm italic">"${
-                      item.split('"')[1] || ""
-                    }"</div>
+                    }. ${title}</h4>
+                    ${
+                      script
+                        ? `<div class="bg-blue-50 p-2 rounded text-sm italic">"${script}"</div>`
+                        : ""
+                    }
                    </div>`;
               } else {
                 return `<div class="mb-2">
@@ -99,25 +129,55 @@ export default function AIRecommendationCards({
 
           nextWeekFormatted = recommendations.nextWeek
             .map((item, index) => {
-              if (
-                item.includes('"') ||
-                item.includes("Ask") ||
-                item.includes("Say")
-              ) {
+              const hasQuotes = item.includes('"');
+              const hasAsk = item.includes("Ask");
+              const hasSay = item.includes("Say");
+
+              if (hasQuotes || hasAsk || hasSay) {
+                // Extract conversation script more accurately
+                let title = item;
+                let script = "";
+
+                if (hasQuotes) {
+                  const quoteMatch = item.match(/"([^"]+)"/);
+                  if (quoteMatch) {
+                    script = quoteMatch[1];
+                    title = item.replace(/"([^"]+)"/, "").trim();
+                  }
+                } else if (hasAsk) {
+                  const askMatch = item.match(/Ask[^:]*:\s*["']([^"']+)["']/);
+                  if (askMatch) {
+                    script = askMatch[1];
+                    title = item
+                      .replace(/Ask[^:]*:\s*["']([^"']+)["']/, "")
+                      .trim();
+                  }
+                } else if (hasSay) {
+                  const sayMatch = item.match(/Say[^:]*:\s*["']([^"']+)["']/);
+                  if (sayMatch) {
+                    script = sayMatch[1];
+                    title = item
+                      .replace(/Say[^:]*:\s*["']([^"']+)["']/, "")
+                      .trim();
+                  }
+                }
+
                 return `<div class="mb-3">
-                   <h4 class="font-semibold text-green-600 mb-1">${
-                     index + 1
-                   }. ${item.split('"')[0]?.trim() || item}</h4>
-                   <div class="bg-green-50 p-2 rounded text-sm italic">"${
-                     item.split('"')[1] || ""
-                   }"</div>
-                 </div>`;
+                    <h4 class="font-semibold text-green-600 mb-1">${
+                      index + 1
+                    }. ${title}</h4>
+                    ${
+                      script
+                        ? `<div class="bg-green-50 p-2 rounded text-sm italic">"${script}"</div>`
+                        : ""
+                    }
+                   </div>`;
               } else {
                 return `<div class="mb-2">
-                   <h4 class="font-semibold text-gray-800 mb-1">${
-                     index + 1
-                   }. ${item}</h4>
-                 </div>`;
+                    <h4 class="font-semibold text-gray-800 mb-1">${
+                      index + 1
+                    }. ${item}</h4>
+                   </div>`;
               }
             })
             .join("");
