@@ -349,14 +349,29 @@ export default function FreeSignupCompare({
     [stats, conversionStats]
   );
 
-  const SimpleStatCard = ({ title, value, subvalue }) => (
+  const SimpleStatCard = ({ title, value, subvalue, isCritical = false }) => (
     <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow h-24 flex flex-col justify-center">
       <h3 className="text-[10px] sm:text-xs font-semibold tracking-wide text-gray-500 mb-1 uppercase">
         {title}
       </h3>
-      <div className="flex items-baseline gap-2">
-        <div className="text-xl sm:text-2xl font-bold">
-          {typeof value === "number" ? value.toLocaleString() : value}
+      <div className={`flex items-baseline gap-2 ${isCritical ? "text-red-600" : ""}`}>
+        <div className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+          <span>{typeof value === "number" ? value.toLocaleString() : value}</span>
+          {isCritical && (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 48 48"
+              className="w-5 h-5 text-red-600"
+              aria-label="Downtrend"
+            >
+              <defs>
+                <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                  <polygon points="0 0, 6 3, 0 6" fill="currentColor" />
+                </marker>
+              </defs>
+              <polyline points="4,12 20,28 28,20 44,36" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" markerEnd="url(#arrowhead)" />
+            </svg>
+          )}
         </div>
         {subvalue ? (
           <div className="text-[11px] sm:text-xs text-gray-500 font-medium">
@@ -375,7 +390,12 @@ export default function FreeSignupCompare({
         <SimpleStatCard title="Demo Request" value={data.demoRequested} />
         <SimpleStatCard title="Demo Complete" value={data.demoCompleted} />
         <SimpleStatCard title="Demo Declined" value={data.demoDeclined} />
-        <SimpleStatCard title="Sales" value={data.salesCount} />
+        <SimpleStatCard
+          title="Sales"
+          value={data.salesCount}
+          subvalue={`${data.conversionRate}%`}
+          isCritical={data.conversionRate < 5}
+        />
       </div>
     );
   };

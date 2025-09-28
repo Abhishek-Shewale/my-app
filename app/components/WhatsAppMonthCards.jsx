@@ -14,6 +14,7 @@ import {
   Line,
   ComposedChart,
 } from "recharts";
+import { TrendingDown } from "lucide-react";
 
 export default function WhatsAppDashboard({
   fallbackSpreadsheetId,
@@ -549,15 +550,18 @@ export default function WhatsAppDashboard({
     };
   }, [stats, demoStatusData, freeSignupData]);
 
-  const StatCard = ({ title, value, className = "" }) => (
+  const StatCard = ({ title, value, className = "", isCritical = false }) => (
     <div
       className={`bg-white text-gray-800 p-3 rounded-lg shadow-md border border-gray-200 ${className}`}
     >
       <h3 className="text-xs font-medium mb-1 text-gray-600 uppercase">
         {title}
       </h3>
-      <div className="text-xl font-bold">
-        {typeof value === "number" ? value.toLocaleString() : value}
+      <div className={`text-xl font-bold flex items-center gap-2 ${isCritical ? "text-red-600" : ""}`}>
+        <span>{typeof value === "number" ? value.toLocaleString() : value}</span>
+        {isCritical && (
+          <TrendingDown className="w-5 h-5 text-red-600" strokeWidth={3} aria-label="Downtrend" />
+        )}
       </div>
     </div>
   );
@@ -675,6 +679,7 @@ export default function WhatsAppDashboard({
           <StatCard
             title="Demo Requested"
             value={`${processedData.demoRequested} (${processedData.conversionRate}%)`}
+            isCritical={processedData.conversionRate < 5}
           />
           <StatCard
             title="Demo Declined"
@@ -690,6 +695,7 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
+            isCritical={!!demoStatusData && processedData.demoConversionRate < 5}
           />
           <StatCard
             title="Conversion Rate (Demo)"
@@ -699,10 +705,12 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
+            isCritical={!!demoStatusData && processedData.demoConversionRate < 5}
           />
           <StatCard
             title="Free Signups"
             value={`${processedData.freeSignupCount} (${freeSignupPercent}%)`}
+            isCritical={freeSignupPercent < 5}
           />
         </div>
 
