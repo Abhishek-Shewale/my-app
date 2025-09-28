@@ -275,9 +275,9 @@ export default function FreeSignupCompare({
       });
     }
 
-    // Conversion rate = Sales / Total Contacts (%), rounded
+    // Conversion rate = Sales / Demo Completed (%), rounded
     const conversionRate =
-      totalContacts > 0 ? Math.round((salesCount / totalContacts) * 100) : 0;
+      demoCompleted > 0 ? Math.round((salesCount / demoCompleted) * 100) : 0;
 
     const languageCount = {};
     const contactsByDate = {};
@@ -316,10 +316,10 @@ export default function FreeSignupCompare({
       .sort((a, b) => a.day - b.day)
       .map((day) => ({
         ...day,
-        // Per-day sales conversion
+        // Per-day sales conversion (using demoCompleted for the day)
         conversionRate:
-          day.totalContacts > 0
-            ? ((salesByDate[day.day] || 0) / day.totalContacts) * 100
+          day.demoRequested > 0
+            ? ((salesByDate[day.day] || 0) / day.demoRequested) * 100
             : 0,
         demoCompleted: day.totalContacts,
         ...Object.fromEntries(
