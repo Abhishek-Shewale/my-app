@@ -79,6 +79,7 @@ export default function FreeSignupCompare({
 
   useEffect(() => {
     if (!selectedMonth) return;
+    
     const cachedStats = getCachedData(selectedMonth);
     if (cachedStats) {
       setStats(cachedStats);
@@ -102,13 +103,38 @@ export default function FreeSignupCompare({
       setLoading(true);
     }
     setError(null);
+    
     const controller = new AbortController();
+    let isMounted = true;
 
     const fetchStats = async () => {
       try {
-        // Fetch both freesignup and conversion data
+        // Add timeout to prevent hanging requests
+        const timeoutId = setTimeout(() => {
+          controller.abort();
+        }, 30000); // 30 second timeout
+
+        // Fetch both freesignup and conversion data with retry logic
+        const fetchWithRetry = async (url, retries = 3) => {
+          for (let i = 0; i < retries; i++) {
+            try {
+              const response = await fetch(url, { 
+                signal: controller.signal,
+                headers: {
+                  'Cache-Control': 'no-cache',
+                }
+              });
+              if (response.ok) return response;
+              if (i === retries - 1) throw new Error(`HTTP ${response.status}`);
+            } catch (err) {
+              if (i === retries - 1) throw err;
+              await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
+            }
+          }
+        };
+
         const [freeSignupRes, conversionRes] = await Promise.all([
-          fetch(
+          fetchWithRetry(
             new URL("/api/freesignupsheet", window.location.origin).toString() +
               "?" +
               new URLSearchParams({
@@ -117,32 +143,32 @@ export default function FreeSignupCompare({
                   selectedMonth.split("-")[1] +
                   "-" +
                   selectedMonth.split("-")[0],
-              }),
-            { signal: controller.signal }
+              })
           ),
-          fetch(
+          fetchWithRetry(
             new URL("/api/conversionsheet", window.location.origin).toString() +
               "?" +
               new URLSearchParams({
                 spreadsheetId: CONVERSION_SPREADSHEET_ID,
-              }),
-            { signal: controller.signal }
+              })
           ),
         ]);
 
-        if (!freeSignupRes.ok)
-          throw new Error(`FreeSignup API error ${freeSignupRes.status}`);
-        if (!conversionRes.ok)
-          throw new Error(`Conversion API error ${conversionRes.status}`);
+        clearTimeout(timeoutId);
+
+        if (!isMounted) return;
 
         const [freeSignupData, conversionData] = await Promise.all([
           freeSignupRes.json(),
           conversionRes.json(),
         ]);
 
+        if (!isMounted) return;
+
         cacheData(selectedMonth, freeSignupData);
         setStats(freeSignupData);
         setConversionStats(conversionData);
+        
         // Cache conversion data
         try {
           localStorage.setItem(
@@ -152,18 +178,25 @@ export default function FreeSignupCompare({
         } catch {}
         setError(null);
       } catch (err) {
-        if (err.name !== "AbortError") {
-          setError(err.message || "Failed to load");
-          // eslint-disable-next-line no-console
-          console.error(err);
+        if (err.name !== "AbortError" && isMounted) {
+          setError(err.message || "Failed to load data. Please try again.");
+          console.error("Fetch error:", err);
         }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchStats();
-    return () => controller.abort();
+    // Debounce the fetch to prevent rapid successive calls
+    const debouncedFetch = setTimeout(fetchStats, 300);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(debouncedFetch);
+      controller.abort();
+    };
   }, [selectedMonth, SPREADSHEET_ID, CONVERSION_SPREADSHEET_ID]);
 
   const normalizeLanguage = (lang) => {
@@ -197,10 +230,55 @@ export default function FreeSignupCompare({
     );
     const totalContacts = filteredContacts.length;
 
-    // For free signup, everyone accepts demo and completes it
-    const demoRequested = totalContacts;
-    const demoCompleted = totalContacts;
-    const demoDeclined = 0;
+    // Helper: case-insensitive field lookup (handles header name variations)
+    const getContactField = (contact, name) => {
+      if (!contact) return undefined;
+      const norm = (s) =>
+        String(s || "")
+          .toLowerCase()
+          .replace(/[\s_]+/g, "");
+      const target = norm(name);
+      for (const key of Object.keys(contact)) {
+        if (norm(key) === target) return contact[key];
+      }
+      // fallback to direct access
+      return contact[name] ?? contact[name?.toLowerCase?.()] ?? undefined;
+    };
+
+    const strictYes = (v) =>
+      v !== undefined && v !== null && String(v).trim().toLowerCase() === "yes";
+    const strictNo = (v) =>
+      v !== undefined && v !== null && String(v).trim().toLowerCase() === "no";
+
+    // Demo metrics (strict mapping like in FreeSignup)
+    let demoRequested = 0;
+    let demoDeclined = 0;
+    let demoCompleted = 0;
+
+    // Calculate demo stats by reading actual spreadsheet data
+    filteredContacts.forEach((contact) => {
+      // Try multiple field name variations
+      const reqField = getContactField(contact, "demoRequested") || 
+                      getContactField(contact, "Demo requested") ||
+                      getContactField(contact, "Demo Requested") ||
+                      contact["Demo requested"] ||
+                      contact["demoRequested"];
+                      
+      const statusField = getContactField(contact, "demoStatus") || 
+                         getContactField(contact, "Demo Status") ||
+                         getContactField(contact, "Demo Status") ||
+                         contact["Demo Status"] ||
+                         contact["demoStatus"];
+
+      const requested = strictYes(reqField); // "yes" in demo requested
+      const declined = strictNo(reqField); // "no" in demo requested
+      // only count completed if the contact had requested a demo AND demo status is yes
+      const completed = requested && strictYes(statusField);
+
+      if (requested) demoRequested += 1;
+      if (declined) demoDeclined += 1;
+      if (completed) demoCompleted += 1;
+    });
 
     // Calculate sales by matching with conversion data
     let salesCount = 0;
@@ -276,9 +354,15 @@ export default function FreeSignupCompare({
       });
     }
 
-    // Conversion rate = Sales / Demo Completed (%), rounded
+    // Calculate all the rate metrics like in FreeSignup
     const conversionRate =
+      totalContacts > 0 ? Math.round((salesCount / totalContacts) * 100) : 0;
+    const demoCompletionRate =
+      demoRequested > 0 ? Math.round((demoCompleted / demoRequested) * 100) : 0;
+    const salesFromCompletedRate =
       demoCompleted > 0 ? Math.round((salesCount / demoCompleted) * 100) : 0;
+    const overallSalesFromRequestsRate =
+      demoRequested > 0 ? Math.round((salesCount / demoRequested) * 100) : 0;
 
     const languageCount = {};
     const contactsByDate = {};
@@ -292,18 +376,38 @@ export default function FreeSignupCompare({
           totalContacts: 0,
           demoRequested: 0,
           demoNo: 0,
+          demoDeclined: 0,
+          demoCompleted: 0,
         };
       }
       contactsByDate[day].totalContacts += 1;
-      if (
-        contact.demoStatus &&
-        (contact.demoStatus.toLowerCase().includes("scheduled") ||
-          contact.demoStatus.toLowerCase().includes("completed"))
-      ) {
+
+      // Use the same logic as above for demo stats
+      const reqField = getContactField(contact, "demoRequested") || 
+                      getContactField(contact, "Demo requested") ||
+                      getContactField(contact, "Demo Requested") ||
+                      contact["Demo requested"] ||
+                      contact["demoRequested"];
+                      
+      const statusField = getContactField(contact, "demoStatus") || 
+                         getContactField(contact, "Demo Status") ||
+                         getContactField(contact, "Demo Status") ||
+                         contact["Demo Status"] ||
+                         contact["demoStatus"];
+
+      const requested = strictYes(reqField);
+      const declined = strictNo(reqField);
+      const completed = requested && strictYes(statusField);
+
+      if (requested) {
         contactsByDate[day].demoRequested += 1;
-      } else {
+      } else if (declined) {
         contactsByDate[day].demoNo += 1;
+        contactsByDate[day].demoDeclined += 1;
       }
+
+      if (completed) contactsByDate[day].demoCompleted += 1;
+
       const language = normalizeLanguage(contact.language);
       languageCount[language] = (languageCount[language] || 0) + 1;
       contactsByDate[day][language] = (contactsByDate[day][language] || 0) + 1;
@@ -322,7 +426,7 @@ export default function FreeSignupCompare({
           day.demoRequested > 0
             ? ((salesByDate[day.day] || 0) / day.demoRequested) * 100
             : 0,
-        demoCompleted: day.totalContacts,
+        demoCompleted: day.demoCompleted,
         ...Object.fromEntries(
           Object.keys(sortedLanguages).map((l) => [l, day[l] || 0])
         ),
@@ -336,6 +440,9 @@ export default function FreeSignupCompare({
       salesCount,
       demoNo: demoDeclined, // Keep for backward compatibility
       conversionRate,
+      demoCompletionRate,
+      salesFromCompletedRate,
+      overallSalesFromRequestsRate,
       languages: sortedLanguages,
       dailyData,
     };
@@ -404,22 +511,44 @@ export default function FreeSignupCompare({
     </div>
   );
 
-  const TopFive = ({ data, assigneeName }) => {
+  const AllStatsCards = ({ data, assigneeName }) => {
     if (!data) return null;
 
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 mb-4 sm:mb-6">
-        <SimpleStatCard title="Total Contacts" value={data.totalContacts} />
-        <SimpleStatCard title="Demo Request" value={data.demoRequested} />
-        <SimpleStatCard title="Demo Complete" value={data.demoCompleted} />
-        <SimpleStatCard title="Demo Declined" value={data.demoDeclined} />
-        <SimpleStatCard
-          title="Sales"
-          value={data.salesCount}
-          subvalue={`${data.conversionRate}%`}
-          isCritical={data.conversionRate < 5}
-        />
-      </div>
+      <>
+        {/* First row - 5 main metrics */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4 mb-4 sm:mb-6">
+          <SimpleStatCard title="Total Contacts" value={data.totalContacts} />
+          <SimpleStatCard title="Demo Request" value={data.demoRequested} />
+          <SimpleStatCard title="Demo Complete" value={data.demoCompleted} />
+          <SimpleStatCard title="Demo Declined" value={data.demoDeclined} />
+          <SimpleStatCard
+            title="Sales"
+            value={data.salesCount}
+            subvalue={`${data.conversionRate}%`}
+            isCritical={data.conversionRate < 5}
+          />
+        </div>
+        
+        {/* Second row - 3 rate metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
+          <SimpleStatCard
+            title="Demo Completion Rate"
+            value={`${data.demoCompletionRate}%`}
+            isCritical={data.demoCompletionRate < 5}
+          />
+          <SimpleStatCard
+            title="Sales Conversion from Completed Demos"
+            value={`${data.salesFromCompletedRate}%`}
+            isCritical={data.salesFromCompletedRate < 5}
+          />
+          <SimpleStatCard
+            title="Overall Sales Conversion from Demo Requests"
+            value={`${data.overallSalesFromRequestsRate}%`}
+            isCritical={data.overallSalesFromRequestsRate < 5}
+          />
+        </div>
+      </>
     );
   };
 
@@ -463,15 +592,11 @@ export default function FreeSignupCompare({
                     +5%
                   </span>
                 )}
-                {sowmya.totalContacts <= 20 && (
-                  <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded">
-                    -5%
-                  </span>
-                )}
+                
               </div>
             )}
           </div>
-          <TopFive data={sowmya} assigneeName="Sowmya" />
+          <AllStatsCards data={sowmya} assigneeName="Sowmya" />
           <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
             <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800">
               DAILY LEAD GENERATION
@@ -513,15 +638,11 @@ export default function FreeSignupCompare({
                     +5%
                   </span>
                 )}
-                {sukaina.totalContacts <= 20 && (
-                  <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded">
-                    -5%
-                  </span>
-                )}
+                
               </div>
             )}
           </div>
-          <TopFive data={sukaina} assigneeName="Sukaina" />
+          <AllStatsCards data={sukaina} assigneeName="Sukaina" />
           <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
             <h3 className="text-sm sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800">
               DAILY LEAD GENERATION

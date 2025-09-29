@@ -723,6 +723,9 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
+            isCritical={
+              !!demoStatusData && processedData.demoConversionRate < 5
+            }
           />
           <StatCard
             title="Free Signups"

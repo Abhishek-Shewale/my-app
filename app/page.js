@@ -1,19 +1,35 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { 
+  FreeSignupLoading, 
+  FreeSignupCompareLoading, 
+  WhatsAppLoading 
+} from "./components/LoadingComponents";
+
 const WhatsAppDashboard = dynamic(
   () => import("./components/WhatsAppMonthCards"),
-  { ssr: false }
+  { 
+    ssr: false,
+    loading: () => <WhatsAppLoading />
+  }
 );
 const SignupAnalyticsDashboard = dynamic(
   () => import("./components/FreeSignup"),
-  { ssr: false }
+  { 
+    ssr: false,
+    loading: () => <FreeSignupLoading />
+  }
 );
 const FreeSignupCompare = dynamic(
   () => import("./components/FreeSignupCompare"),
-  { ssr: false }
+  { 
+    ssr: false,
+    loading: () => <FreeSignupCompareLoading />
+  }
 );
 
 export default function Page() {
@@ -61,24 +77,28 @@ export default function Page() {
           <SubTabButton id="compare" label="Compare" />
         </div>
         <div className="bg-gray-100 rounded-lg">
-          {activeSubTab === "whatsapp" && (
-            <WhatsAppDashboard
-              hideNavButtons
-              month={month}
-              onChangeMonth={setMonth}
-            />
-          )}
-          {activeSubTab === "signup" && (
-            <SignupAnalyticsDashboard
-              hideNavButtons
-              showAssigneeFilter={false}
-              month={month}
-              onChangeMonth={setMonth}
-            />
-          )}
-          {activeSubTab === "compare" && (
-            <FreeSignupCompare month={month} onChangeMonth={setMonth} />
-          )}
+          <ErrorBoundary>
+            <Suspense fallback={<div className="p-6">Loading...</div>}>
+              {activeSubTab === "whatsapp" && (
+                <WhatsAppDashboard
+                  hideNavButtons
+                  month={month}
+                  onChangeMonth={setMonth}
+                />
+              )}
+              {activeSubTab === "signup" && (
+                <SignupAnalyticsDashboard
+                  hideNavButtons
+                  showAssigneeFilter={false}
+                  month={month}
+                  onChangeMonth={setMonth}
+                />
+              )}
+              {activeSubTab === "compare" && (
+                <FreeSignupCompare month={month} onChangeMonth={setMonth} />
+              )}
+            </Suspense>
+          </ErrorBoundary>
         </div>
       </div>
     );

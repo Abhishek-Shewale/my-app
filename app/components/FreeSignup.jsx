@@ -198,11 +198,36 @@ export default function SignupAnalyticsDashboard({
     setError(null);
 
     const controller = new AbortController();
+    let isMounted = true;
 
     const fetchStats = async () => {
       try {
+        // Add timeout to prevent hanging requests
+        const timeoutId = setTimeout(() => {
+          controller.abort();
+        }, 30000); // 30 second timeout
+
+        // Fetch with retry logic
+        const fetchWithRetry = async (url, retries = 3) => {
+          for (let i = 0; i < retries; i++) {
+            try {
+              const response = await fetch(url, { 
+                signal: controller.signal,
+                headers: {
+                  'Cache-Control': 'no-cache',
+                }
+              });
+              if (response.ok) return response;
+              if (i === retries - 1) throw new Error(`HTTP ${response.status}`);
+            } catch (err) {
+              if (i === retries - 1) throw err;
+              await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
+            }
+          }
+        };
+
         const [freeSignupRes, conversionRes] = await Promise.all([
-          fetch(
+          fetchWithRetry(
             new URL("/api/freesignupsheet", window.location.origin).toString() +
               "?" +
               new URLSearchParams({
@@ -211,28 +236,27 @@ export default function SignupAnalyticsDashboard({
                   selectedMonth.split("-")[1] +
                   "-" +
                   selectedMonth.split("-")[0],
-              }),
-            { signal: controller.signal }
+              })
           ),
-          fetch(
+          fetchWithRetry(
             new URL("/api/conversionsheet", window.location.origin).toString() +
               "?" +
               new URLSearchParams({
                 spreadsheetId: CONVERSION_SPREADSHEET_ID,
-              }),
-            { signal: controller.signal }
+              })
           ),
         ]);
 
-        if (!freeSignupRes.ok)
-          throw new Error(`FreeSignup API error ${freeSignupRes.status}`);
-        if (!conversionRes.ok)
-          throw new Error(`Conversion API error ${conversionRes.status}`);
+        clearTimeout(timeoutId);
+
+        if (!isMounted) return;
 
         const [freeSignupData, conversionData] = await Promise.all([
           freeSignupRes.json(),
           conversionRes.json(),
         ]);
+
+        if (!isMounted) return;
 
         cacheData(selectedMonth, freeSignupData);
         setStats(freeSignupData);
@@ -250,17 +274,25 @@ export default function SignupAnalyticsDashboard({
         } catch {}
         setError(null);
       } catch (err) {
-        if (err.name !== "AbortError") {
-          setError(err.message || "Failed to load");
+        if (err.name !== "AbortError" && isMounted) {
+          setError(err.message || "Failed to load data. Please try again.");
           console.error("Fetch error:", err);
         }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchStats();
-    return () => controller.abort();
+    // Debounce the fetch to prevent rapid successive calls
+    const debouncedFetch = setTimeout(fetchStats, 300);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(debouncedFetch);
+      controller.abort();
+    };
   }, [selectedMonth, SPREADSHEET_ID, CONVERSION_SPREADSHEET_ID]);
 
   // Process data from API response — strict mapping and only count completed if requested
@@ -528,7 +560,7 @@ export default function SignupAnalyticsDashboard({
     return ["All", ...uniqueAssignees.sort()];
   }, [stats, selectedAssignee]);
 
-  const SimpleStatCard = ({ title, value, className = "" }) => {
+  const SimpleStatCard = ({ title, value, className = "", isCritical = false }) => {
     return (
       <div
         className={`bg-white text-gray-800 p-3 rounded-lg shadow-md border border-gray-200 ${className}`}
@@ -536,8 +568,44 @@ export default function SignupAnalyticsDashboard({
         <h3 className="text-xs font-medium mb-1 text-gray-600 uppercase">
           {title}
         </h3>
-        <div className="text-xl font-bold">
-          {typeof value === "number" ? value.toLocaleString() : value}
+        <div
+          className={`text-xl font-bold flex items-center gap-2 ${
+            isCritical ? "text-red-600" : ""
+          }`}
+        >
+          <span>
+            {typeof value === "number" ? value.toLocaleString() : value}
+          </span>
+          {isCritical && (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 48 48"
+              className="w-5 h-5 text-red-600"
+              aria-label="Downtrend"
+            >
+              <defs>
+                <marker
+                  id="arrowhead"
+                  markerWidth="6"
+                  markerHeight="6"
+                  refX="5"
+                  refY="3"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 6 3, 0 6" fill="currentColor" />
+                </marker>
+              </defs>
+              <polyline
+                points="4,12 20,28 28,20 44,36"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                markerEnd="url(#arrowhead)"
+              />
+            </svg>
+          )}
         </div>
       </div>
     );
@@ -672,14 +740,17 @@ export default function SignupAnalyticsDashboard({
           <SimpleStatCard
             title="Demo Completion Rate"
             value={`${processedData.demoCompletionRate}%`}
+            isCritical={processedData.demoCompletionRate < 5}
           />
           <SimpleStatCard
             title="Sales Conversion from Completed Demos"
             value={`${processedData.salesFromCompletedRate}%`}
+            isCritical={processedData.salesFromCompletedRate < 5}
           />
           <SimpleStatCard
             title="Overall Sales Conversion from Demo Requests"
             value={`${processedData.overallSalesFromRequestsRate}%`}
+            isCritical={processedData.overallSalesFromRequestsRate < 5}
           />
         </div>
 
