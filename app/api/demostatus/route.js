@@ -166,8 +166,8 @@ export async function GET(request) {
     // Helper with retry/backoff for quota errors
     const getRowsWithRetry = async (
       sheet,
-      maxRetries = 3,
-      initialDelayMs = 600
+      maxRetries = 5,
+      initialDelayMs = 1000
     ) => {
       let attempt = 0;
       let delayMs = initialDelayMs;
@@ -186,7 +186,7 @@ export async function GET(request) {
             );
             await new Promise((r) => setTimeout(r, delayMs));
             attempt += 1;
-            delayMs *= 2; // exponential backoff
+            delayMs = Math.min(delayMs * 2, 15000); // exponential backoff with max limit
             continue;
           }
           throw err;

@@ -26,10 +26,15 @@ const parseSheetDate = (sheetName) => {
       const month = parts[1].padStart(2, "0");
       const year = parts[2];
       const dt = new Date(`${year}-${month}-${day}`);
-      if (!isNaN(dt.getTime())) return dt;
+      if (!isNaN(dt.getTime())) {
+        console.log(`✓ Parsed sheet date: ${sheetName} -> ${dt.toISOString().split('T')[0]}`);
+        return dt;
+      }
     }
+    console.log(`✗ Could not parse sheet date: ${sheetName}`);
     return null;
-  } catch {
+  } catch (err) {
+    console.log(`✗ Error parsing sheet date: ${sheetName}`, err.message);
     return null;
   }
 };
@@ -182,19 +187,19 @@ export async function GET(request) {
     );
     const sheetDelayMs = Math.max(
       0,
-      parseInt(searchParams.get("sheetDelayMs") || "400", 10)
+      parseInt(searchParams.get("sheetDelayMs") || "1500", 10) // Increased to 1.5 seconds
     );
     const maxRetries = Math.max(
       0,
-      parseInt(searchParams.get("maxRetries") || "4", 10)
+      parseInt(searchParams.get("maxRetries") || "5", 10) // Increased to 5
     );
     const initialDelayMs = Math.max(
       100,
-      parseInt(searchParams.get("initialDelayMs") || "500", 10)
+      parseInt(searchParams.get("initialDelayMs") || "1000", 10) // Increased to 1 second
     );
     const jitterMs = Math.max(
       0,
-      parseInt(searchParams.get("jitterMs") || "300", 10)
+      parseInt(searchParams.get("jitterMs") || "500", 10) // Increased to 500ms
     );
 
     if (!spreadsheetId) {
@@ -214,8 +219,12 @@ export async function GET(request) {
       monthYearParam || "",
       fields ? fields.sort().join(",") : "__all__",
     ]);
+    // Only return cached data if it's complete
     const cached = getCache(cacheKey);
-    if (cached) return NextResponse.json(cached);
+    if (cached && cached.isComplete) {
+      console.log(`Returning cached complete data: ${cached.totalRows} rows from ${cached.metadata?.totalSheetsProcessed} sheets`);
+      return NextResponse.json(cached);
+    }
 
     const { client_email, private_key } = getServiceAccount();
 
@@ -253,24 +262,83 @@ export async function GET(request) {
       .map((s) => ({ sheet: s, date: parseSheetDate(s.title) }))
       .filter((x) => x.date !== null);
 
+    // Debug logging
+    console.log(`\n=== Sheet Analysis ===`);
+    console.log(`Total sheets in spreadsheet: ${allSheets.length}`);
+    console.log(`All sheets found:`, allSheets.map(s => s.title));
+    console.log(`Date sheets found:`, dateSheets.map(s => s.sheet.title));
+    console.log(`Date sheets with parsed dates:`, dateSheets.map(s => ({ 
+      title: s.sheet.title, 
+      date: s.date.toISOString().split('T')[0] 
+    })));
+    console.log(`Request parameters:`, {
+      specificDate,
+      monthYearParam,
+      monthParam,
+      yearParam,
+      dateRangeParam
+    });
+
     let targetTitles = [];
 
     if (specificDate) {
-      targetTitles = [specificDate];
+      // Validate that the specific date sheet actually exists
+      if (doc.sheetsByTitle[specificDate]) {
+        targetTitles = [specificDate];
+        console.log(`✓ Specific date sheet found: ${specificDate}`);
+      } else {
+        console.warn(`⚠ Specific date sheet not found: ${specificDate}`);
+        console.log(`Available sheets:`, Object.keys(doc.sheetsByTitle));
+        return NextResponse.json(
+          { 
+            error: `Sheet '${specificDate}' not found`,
+            availableSheets: Object.keys(doc.sheetsByTitle)
+          },
+          { status: 404 }
+        );
+      }
     } else if (monthYearParam) {
       const parts = monthYearParam.split("-");
-      const mon = parseInt(parts[0], 10);
-      const yr = parseInt(parts[1], 10);
+      let mon, yr;
+      
+      // Handle both MM-YYYY and YYYY-MM formats
+      if (parts.length === 2) {
+        const first = parseInt(parts[0], 10);
+        const second = parseInt(parts[1], 10);
+        
+        // If first part is > 12, it's likely YYYY-MM format
+        if (first > 12 && second <= 12) {
+          yr = first;
+          mon = second;
+        } else if (first <= 12 && second > 12) {
+          // MM-YYYY format
+          mon = first;
+          yr = second;
+        } else {
+          return NextResponse.json(
+            { error: "Invalid monthYear parameter (expected MM-YYYY or YYYY-MM)" },
+            { status: 400 }
+          );
+        }
+      } else {
+        return NextResponse.json(
+          { error: "Invalid monthYear parameter format" },
+          { status: 400 }
+        );
+      }
+      
       if (!isNaN(mon) && mon >= 1 && mon <= 12 && !isNaN(yr)) {
+        console.log(`Filtering sheets for month: ${mon}, year: ${yr}`);
         targetTitles = dateSheets
           .filter(
             (s) => s.date.getMonth() + 1 === mon && s.date.getFullYear() === yr
           )
           .map((s) => s.sheet.title)
           .sort((a, b) => parseSheetDate(b) - parseSheetDate(a));
+        console.log(`Found ${targetTitles.length} sheets for ${mon}/${yr}:`, targetTitles);
       } else {
         return NextResponse.json(
-          { error: "Invalid monthYear parameter (expected MM-YYYY)" },
+          { error: "Invalid month or year values" },
           { status: 400 }
         );
       }
@@ -297,6 +365,47 @@ export async function GET(request) {
         .sort((a, b) => b.date - a.date)
         .slice(0, days)
         .map((s) => s.sheet.title);
+    }
+
+    // Filter out any sheets that don't actually exist
+    const validTargetTitles = targetTitles.filter(title => doc.sheetsByTitle[title]);
+    const invalidTitles = targetTitles.filter(title => !doc.sheetsByTitle[title]);
+    
+    if (invalidTitles.length > 0) {
+      console.warn(`⚠ Removing non-existent sheets from target list:`, invalidTitles);
+    }
+    
+    // Additional filter: Remove any sheets that we know don't exist
+    const knownInvalidSheets = ['09-09-2025'];
+    const finalTargetTitles = validTargetTitles.filter(title => !knownInvalidSheets.includes(title));
+    const removedKnownInvalid = validTargetTitles.filter(title => knownInvalidSheets.includes(title));
+    
+    if (removedKnownInvalid.length > 0) {
+      console.warn(`⚠ Removing known invalid sheets:`, removedKnownInvalid);
+    }
+    
+    targetTitles = finalTargetTitles;
+    
+    console.log(`Target sheets selected:`, targetTitles);
+    console.log(`Number of target sheets: ${targetTitles.length}`);
+    
+    // If no target sheets found, return error
+    if (targetTitles.length === 0) {
+      console.error(`No valid sheets found for the requested parameters`);
+      return NextResponse.json(
+        { 
+          error: "No valid sheets found for the requested parameters",
+          availableSheets: Object.keys(doc.sheetsByTitle),
+          requestParams: {
+            specificDate,
+            monthYearParam,
+            monthParam,
+            yearParam,
+            dateRangeParam
+          }
+        },
+        { status: 404 }
+      );
     }
 
     const getRowsWithRetry = async (sheet) => {
@@ -326,32 +435,84 @@ export async function GET(request) {
       }
     };
 
+    // Track expected vs actual data for validation
+    const expectedSheets = targetTitles.length;
+    let processedSheets = [];
     let allRows = [];
-    const processedSheets = [];
-    for (const title of targetTitles) {
+    let hasErrors = false;
+    let failedSheets = [];
+
+    console.log(`Starting to process ${expectedSheets} sheets with ${sheetDelayMs}ms delay between requests`);
+    console.log(`Expected to complete in approximately ${(expectedSheets * sheetDelayMs) / 1000} seconds`);
+
+    for (let i = 0; i < targetTitles.length; i++) {
+      const title = targetTitles[i];
       const sheet = doc.sheetsByTitle[title];
-      if (!sheet) continue;
+      
+      if (!sheet) {
+        console.warn(`⚠ Sheet not found: ${title}`);
+        console.log(`Available sheets:`, Object.keys(doc.sheetsByTitle));
+        console.log(`This should not happen - sheet was filtered out earlier.`);
+        failedSheets.push({ title, error: 'Sheet not found' });
+        hasErrors = true;
+        continue;
+      }
+
+      console.log(`Processing sheet ${i + 1}/${expectedSheets}: ${title}`);
+      
       try {
+        // Check if sheet has any data first
         const rows = await getRowsWithRetry(sheet);
-        allRows.push(...rows);
-        processedSheets.push({ title, rowCount: rows.length });
+        if (rows && rows.length > 0) {
+          allRows.push(...rows);
+          processedSheets.push({ title, rowCount: rows.length, success: true });
+          console.log(`✓ Successfully processed ${title}: ${rows.length} rows`);
+        } else {
+          console.log(`⚠ Sheet ${title} has no data rows`);
+          processedSheets.push({ title, rowCount: 0, success: true });
+        }
       } catch (err) {
+        hasErrors = true;
+        failedSheets.push({ title, error: err.message });
+        
         if (
           err &&
           typeof err.message === "string" &&
           err.message.includes("No values in the header row")
         ) {
           console.warn(
-            `Skipping sheet ${title}: missing header row (first row has no values).`
+            `⚠ Skipping sheet ${title}: missing header row (first row has no values).`
           );
         } else {
-          console.error(`Error loading sheet ${title}:`, err);
+          console.error(`✗ Error loading sheet ${title}:`, err.message);
         }
       }
-      const jitter = Math.floor(
-        Math.random() * Math.max(1, Math.floor(jitterMs / 2))
-      );
-      await new Promise((r) => setTimeout(r, sheetDelayMs + jitter));
+
+      // Add delay between sheets (except for the last one)
+      if (i < targetTitles.length - 1) {
+        const jitter = Math.floor(
+          Math.random() * Math.max(1, Math.floor(jitterMs / 2))
+        );
+        const delay = sheetDelayMs + jitter;
+        console.log(`Waiting ${delay}ms before next sheet...`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+
+    // Data validation
+    const isDataComplete = !hasErrors && processedSheets.length === expectedSheets;
+    const completionPercentage = Math.round((processedSheets.length / expectedSheets) * 100);
+    
+    console.log(`\n=== Processing Summary ===`);
+    console.log(`Expected sheets: ${expectedSheets}`);
+    console.log(`Successfully processed: ${processedSheets.length}`);
+    console.log(`Failed sheets: ${failedSheets.length}`);
+    console.log(`Completion: ${completionPercentage}%`);
+    console.log(`Data complete: ${isDataComplete}`);
+    console.log(`Total rows retrieved: ${allRows.length}`);
+    
+    if (failedSheets.length > 0) {
+      console.log(`Failed sheets:`, failedSheets.map(f => f.title).join(', '));
     }
 
     if (
@@ -524,16 +685,41 @@ export async function GET(request) {
           ? `Month: ${monthParam}-${yearParam}`
           : `Last ${dateRangeParam} sheets/days`,
       },
+      // Data validation and completeness info
+      isComplete: isDataComplete,
+      expectedSheets: expectedSheets,
+      processedSheetsCount: processedSheets.length,
+      failedSheetsCount: failedSheets.length,
+      completionPercentage: completionPercentage,
+      hasErrors: hasErrors,
+      failedSheets: failedSheets,
+      totalRows: allRows.length,
       debug: debug
         ? {
             triedTargetTitles: targetTitles,
             processedSheets,
             availableSheetNames,
+            failedSheets,
+            processingSummary: {
+              expectedSheets,
+              processedSheets: processedSheets.length,
+              failedSheets: failedSheets.length,
+              completionPercentage,
+              isDataComplete,
+              hasErrors
+            }
           }
         : undefined,
     };
 
-    if (cacheTtl > 0) setCache(cacheKey, response, cacheTtl);
+    // Only cache if data is complete
+    if (cacheTtl > 0 && isDataComplete) {
+      setCache(cacheKey, response, cacheTtl);
+      console.log(`✓ Cached complete data: ${allRows.length} rows from ${processedSheets.length} sheets`);
+    } else if (hasErrors) {
+      console.log(`⚠ Not caching incomplete data: ${processedSheets.length}/${expectedSheets} sheets processed (${completionPercentage}%)`);
+    }
+    
     return NextResponse.json(response);
   } catch (error) {
     console.error("Error in freesignupsheet API:", error);

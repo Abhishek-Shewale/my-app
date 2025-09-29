@@ -195,19 +195,19 @@ export async function GET(request) {
     );
     const sheetDelayMs = Math.max(
       0,
-      parseInt(searchParams.get("sheetDelayMs") || "400", 10)
+      parseInt(searchParams.get("sheetDelayMs") || "1500", 10) // Increased to 1.5 seconds
     );
     const maxRetries = Math.max(
       0,
-      parseInt(searchParams.get("maxRetries") || "4", 10)
+      parseInt(searchParams.get("maxRetries") || "5", 10) // Increased to 5
     );
     const initialDelayMs = Math.max(
       100,
-      parseInt(searchParams.get("initialDelayMs") || "500", 10)
+      parseInt(searchParams.get("initialDelayMs") || "1000", 10) // Increased to 1 second
     );
     const jitterMs = Math.max(
       0,
-      parseInt(searchParams.get("jitterMs") || "300", 10)
+      parseInt(searchParams.get("jitterMs") || "500", 10) // Increased to 500ms
     );
 
     if (!spreadsheetId) {

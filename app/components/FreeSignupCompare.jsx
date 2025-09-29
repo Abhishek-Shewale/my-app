@@ -587,11 +587,7 @@ export default function FreeSignupCompare({
             <h2 className="text-base sm:text-lg font-semibold">Sowmya</h2>
             {sowmya && (
               <div className="flex items-center gap-2">
-                {sowmya.totalContacts > 20 && (
-                  <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded">
-                    +5%
-                  </span>
-                )}
+               
                 
               </div>
             )}
@@ -633,11 +629,7 @@ export default function FreeSignupCompare({
             <h2 className="text-base sm:text-lg font-semibold">Sukaina</h2>
             {sukaina && (
               <div className="flex items-center gap-2">
-                {sukaina.totalContacts > 20 && (
-                  <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded">
-                    +5%
-                  </span>
-                )}
+                
                 
               </div>
             )}
