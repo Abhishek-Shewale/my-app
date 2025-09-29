@@ -9,7 +9,6 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
-  ComposedChart,
 } from "recharts";
 import AIRecommendationCards from "./AIRecommendationCards";
 
@@ -40,7 +39,6 @@ export default function SignupAnalyticsDashboard({
     "195gQV7QzJ-uoKzqGVapMdF5-zAWQyzuF_I8ffkNGc-o";
   const months = ["2025-09"];
 
-  // keep local month in sync if parent controls it
   useEffect(() => {
     if (controlledMonth && controlledMonth !== selectedMonth) {
       setSelectedMonth(controlledMonth);
@@ -48,18 +46,12 @@ export default function SignupAnalyticsDashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controlledMonth]);
 
-  // OPTIMIZED: Remove artificial delay and prefetch data
   const handleNavigateToWhatsApp = () => {
     setNavigating(true);
-
-    // Prefetch WhatsApp dashboard data before navigation
     prefetchWhatsAppData(selectedMonth);
-
-    // Navigate immediately without delay
     router.push("/WhatsAppMonthCards");
   };
 
-  // OPTIMIZED: Prefetch function for WhatsApp data
   const prefetchWhatsAppData = async (selectedMonth) => {
     try {
       const monthYear = selectedMonth.split("-");
@@ -83,19 +75,16 @@ export default function SignupAnalyticsDashboard({
         url.searchParams.set("spreadsheetId", whatsappSpreadsheetId);
         url.searchParams.set("month", selectedMonth);
 
-        // Fire and forget - don't wait for response
         fetch(url.toString())
           .then((res) => res.json())
           .then((data) => {
             const timestamp = new Date().getTime();
             localStorage.setItem(cacheKey, JSON.stringify({ data, timestamp }));
           })
-          .catch(() => {
-            // Ignore prefetch errors
-          });
+          .catch(() => {});
       }
     } catch (e) {
-      // Ignore prefetch errors
+      // ignore
     }
   };
 
@@ -116,7 +105,6 @@ export default function SignupAnalyticsDashboard({
     Other: "#9ca3af",
   };
 
-  // Normalize language labels to canonical case-insensitive values
   const normalizeLanguage = (lang) => {
     if (!lang) return "Other";
     const value = String(lang).trim().toLowerCase();
@@ -141,7 +129,6 @@ export default function SignupAnalyticsDashboard({
     return map[value] || "Other";
   };
 
-  // OPTIMIZED: Longer cache duration (15 minutes instead of 5)
   const getCachedData = (monthKey) => {
     try {
       const cacheKey = `signup-stats-${monthKey}`;
@@ -150,7 +137,7 @@ export default function SignupAnalyticsDashboard({
 
       const { data, timestamp } = JSON.parse(cachedData);
       const now = new Date().getTime();
-      const fifteenMinutesInMs = 15 * 60 * 1000; // Extended cache time
+      const fifteenMinutesInMs = 15 * 60 * 1000;
 
       if (now - timestamp < fifteenMinutesInMs) {
         return data;
@@ -172,46 +159,39 @@ export default function SignupAnalyticsDashboard({
     }
   };
 
-  // Helper function to normalize contact numbers
   const normalizeContact = (contact) => {
     if (!contact) return "";
     const cleaned = contact.toString().replace(/[^0-9]/g, "");
-    // If starts with 91 and has 12 digits, remove 91
     if (cleaned.startsWith("91") && cleaned.length === 12) {
       return cleaned.substring(2);
     }
-    // If has 10 digits, keep as is
     if (cleaned.length === 10) {
       return cleaned;
     }
     return cleaned;
   };
 
-  // OPTIMIZED: Fetch data with better error handling and immediate cache check
   useEffect(() => {
     if (!selectedMonth) return;
 
-    // Check cache first - if data exists, show immediately
     const cachedStats = getCachedData(selectedMonth);
     if (cachedStats) {
       setStats(cachedStats);
       setError(null);
     }
 
-    // Read cached conversion data to avoid late sales rendering
     try {
       const convCacheRaw = localStorage.getItem("conversion-cache-v1");
       if (convCacheRaw) {
         const { data, timestamp } = JSON.parse(convCacheRaw);
         const now = Date.now();
-        const ttl = 15 * 60 * 1000; // 15 minutes
+        const ttl = 15 * 60 * 1000;
         if (now - timestamp < ttl) {
           setConversionStats(data);
         }
       }
     } catch {}
 
-    // Only set loading if no cached data
     if (!cachedStats) {
       setLoading(true);
     }
@@ -221,7 +201,6 @@ export default function SignupAnalyticsDashboard({
 
     const fetchStats = async () => {
       try {
-        // Fetch both freesignup and conversion data
         const [freeSignupRes, conversionRes] = await Promise.all([
           fetch(
             new URL("/api/freesignupsheet", window.location.origin).toString() +
@@ -257,8 +236,12 @@ export default function SignupAnalyticsDashboard({
 
         cacheData(selectedMonth, freeSignupData);
         setStats(freeSignupData);
+        // debug: inspect contacts returned (remove after verifying)
+        console.log(
+          "API contacts sample:",
+          freeSignupData.contacts && freeSignupData.contacts.slice(0, 6)
+        );
         setConversionStats(conversionData);
-        // Cache conversion data
         try {
           localStorage.setItem(
             "conversion-cache-v1",
@@ -280,69 +263,97 @@ export default function SignupAnalyticsDashboard({
     return () => controller.abort();
   }, [selectedMonth, SPREADSHEET_ID, CONVERSION_SPREADSHEET_ID]);
 
-  // Process data from API response
+  // Process data from API response — strict mapping and only count completed if requested
   const processedData = useMemo(() => {
     if (!stats || !stats.contacts) return null;
+
+    // Helper: case-insensitive field lookup (handles header name variations)
+    const getContactField = (contact, name) => {
+      if (!contact) return undefined;
+      const norm = (s) =>
+        String(s || "")
+          .toLowerCase()
+          .replace(/[\s_]+/g, "");
+      const target = norm(name);
+      for (const key of Object.keys(contact)) {
+        if (norm(key) === target) return contact[key];
+      }
+      // fallback to direct access
+      return contact[name] ?? contact[name?.toLowerCase?.()] ?? undefined;
+    };
+
+    const strictYes = (v) =>
+      v !== undefined && v !== null && String(v).trim().toLowerCase() === "yes";
+    const strictNo = (v) =>
+      v !== undefined && v !== null && String(v).trim().toLowerCase() === "no";
 
     // Filter contacts by assignee
     let filteredContacts = stats.contacts;
     if (selectedAssignee !== "All") {
       filteredContacts = stats.contacts.filter(
-        (contact) => contact.assignedTo === selectedAssignee
+        (c) => (c.assignedTo || "").toString() === selectedAssignee
       );
+    }
+
+    // Debug: Log sample contacts to verify field mapping
+    if (filteredContacts.length > 0) {
+      console.log("Sample contact fields:", {
+        demoRequested: getContactField(filteredContacts[0], "demoRequested"),
+        demoStatus: getContactField(filteredContacts[0], "demoStatus"),
+        contactKeys: Object.keys(filteredContacts[0]),
+        rawContact: filteredContacts[0]
+      });
+      
+      // Also try direct field access
+      console.log("Direct field access:", {
+        "Demo requested": filteredContacts[0]["Demo requested"],
+        "Demo Status": filteredContacts[0]["Demo Status"],
+        "demoRequested": filteredContacts[0]["demoRequested"],
+        "demoStatus": filteredContacts[0]["demoStatus"]
+      });
     }
 
     const totalContacts = filteredContacts.length;
 
-    // For free signup, everyone accepts demo and completes it
-    const demoRequested = totalContacts;
-    const demoCompleted = totalContacts;
-    const demoDeclined = 0;
+    // Demo metrics (strict mapping)
+    let demoRequested = 0;
+    let demoDeclined = 0;
+    let demoCompleted = 0;
 
-    // Calculate sales by matching with conversion data
+    // language & daily buckets
+    const languageCount = {};
+    const contactsByDate = {};
+
+    // Sales matching
     let salesCount = 0;
-    let salesByAssignee = {};
+    const salesByAssignee = {};
     const salesByDate = {};
     const seenSaleKeys = new Set();
 
     if (conversionStats && conversionStats.data) {
-      // Create lookup maps for faster matching
       const freeSignupByEmail = new Map();
       const freeSignupByContact = new Map();
 
       filteredContacts.forEach((contact) => {
-        if (contact.email) {
+        if (contact.email)
           freeSignupByEmail.set(contact.email.toLowerCase().trim(), contact);
-        }
         if (contact.phone) {
-          const normalizedPhone = normalizeContact(contact.phone);
-          if (normalizedPhone) {
-            freeSignupByContact.set(normalizedPhone, contact);
-          }
+          const np = normalizeContact(contact.phone);
+          if (np) freeSignupByContact.set(np, contact);
         }
       });
 
-      // Match conversion data with free signup data
       conversionStats.data.forEach((sale) => {
         let matchedContact = null;
-
-        // Try email match first
-        if (sale.email) {
+        if (sale.email)
           matchedContact = freeSignupByEmail.get(
-            sale.email.toLowerCase().trim()
+            String(sale.email).toLowerCase().trim()
           );
-        }
-
-        // Try contact match if email didn't work
         if (!matchedContact && sale.contact) {
-          const normalizedSaleContact = normalizeContact(sale.contact);
-          if (normalizedSaleContact) {
-            matchedContact = freeSignupByContact.get(normalizedSaleContact);
-          }
+          const ns = normalizeContact(sale.contact);
+          if (ns) matchedContact = freeSignupByContact.get(ns);
         }
-
         if (matchedContact) {
-          // prevent double counting same contact if multiple sale rows match
           const uniqueKey =
             (matchedContact.email &&
               matchedContact.email.toLowerCase().trim()) ||
@@ -353,38 +364,85 @@ export default function SignupAnalyticsDashboard({
             salesCount++;
             const assignee = matchedContact.assignedTo || "Unassigned";
             salesByAssignee[assignee] = (salesByAssignee[assignee] || 0) + 1;
-            // Per-day sales attribution based on contact signup day
             const d = new Date(matchedContact.timestamp);
-            const day = d.getDate();
+            const day = isNaN(d.getTime()) ? 1 : d.getDate();
             salesByDate[day] = (salesByDate[day] || 0) + 1;
-            // Debug log for sales attribution
-            console.log("[FreeSignup] Matched sale:", {
-              sale,
-              matchedContact: {
-                name: matchedContact.name,
-                email: matchedContact.email,
-                phone: matchedContact.phone,
-                assignedTo: matchedContact.assignedTo,
-              },
-              attributedTo: assignee,
-              day,
-            });
           }
         }
       });
     }
 
-    // Calculate assigned/unassigned counts
+    // Walk contacts once
+    filteredContacts.forEach((contact, index) => {
+      // Try multiple field name variations
+      const reqField = getContactField(contact, "demoRequested") || 
+                      getContactField(contact, "Demo requested") ||
+                      getContactField(contact, "Demo Requested") ||
+                      contact["Demo requested"] ||
+                      contact["demoRequested"];
+                      
+      const statusField = getContactField(contact, "demoStatus") || 
+                         getContactField(contact, "Demo Status") ||
+                         getContactField(contact, "Demo Status") ||
+                         contact["Demo Status"] ||
+                         contact["demoStatus"];
+
+      const requested = strictYes(reqField); // "yes" in demo requested
+      const declined = strictNo(reqField); // "no" in demo requested
+      // only count completed if the contact had requested a demo AND demo status is yes
+      const completed = requested && strictYes(statusField);
+
+      // Debug: Log first few contacts to verify field values
+      if (index < 3) {
+        console.log(`Contact ${index + 1}:`, {
+          demoRequested: reqField,
+          demoStatus: statusField,
+          requested,
+          declined,
+          completed
+        });
+      }
+
+      if (requested) demoRequested += 1;
+      if (declined) demoDeclined += 1;
+      if (completed) demoCompleted += 1;
+
+      // Date handling
+      const d = new Date(contact.timestamp);
+      const day = isNaN(d.getTime()) ? 1 : d.getDate();
+      if (!contactsByDate[day]) {
+        contactsByDate[day] = {
+          day,
+          totalContacts: 0,
+          demoRequested: 0,
+          demoNo: 0,
+          demoDeclined: 0,
+          demoCompleted: 0,
+        };
+      }
+      contactsByDate[day].totalContacts += 1;
+
+      if (requested) {
+        contactsByDate[day].demoRequested += 1;
+      } else if (declined) {
+        contactsByDate[day].demoNo += 1;
+        contactsByDate[day].demoDeclined += 1;
+      }
+
+      if (completed) contactsByDate[day].demoCompleted += 1;
+
+      const language = normalizeLanguage(contact.language);
+      languageCount[language] = (languageCount[language] || 0) + 1;
+      contactsByDate[day][language] = (contactsByDate[day][language] || 0) + 1;
+    });
+
     const assignedContacts = filteredContacts.filter(
-      (contact) => contact.assignedTo && contact.assignedTo.trim() !== ""
+      (c) => c.assignedTo && String(c.assignedTo).trim() !== ""
     ).length;
     const unassignedContacts = totalContacts - assignedContacts;
 
-    // Conversion rate = Sales / Total Contacts (%), rounded
     const conversionRate =
       totalContacts > 0 ? Math.round((salesCount / totalContacts) * 100) : 0;
-
-    // Additional requested rates
     const demoCompletionRate =
       demoRequested > 0 ? Math.round((demoCompleted / demoRequested) * 100) : 0;
     const salesFromCompletedRate =
@@ -392,89 +450,38 @@ export default function SignupAnalyticsDashboard({
     const overallSalesFromRequestsRate =
       demoRequested > 0 ? Math.round((salesCount / demoRequested) * 100) : 0;
 
-    const languageCount = {};
-    const contactsByDate = {};
-
-    filteredContacts.forEach((contact) => {
-      const date = new Date(contact.timestamp);
-      const day = date.getDate();
-
-      if (!contactsByDate[day]) {
-        contactsByDate[day] = {
-          day: day,
-          totalContacts: 0,
-          demoRequested: 0,
-          demoNo: 0,
-        };
-      }
-
-      contactsByDate[day].totalContacts += 1;
-
-      if (
-        contact.demoStatus &&
-        (contact.demoStatus.toLowerCase().includes("scheduled") ||
-          contact.demoStatus.toLowerCase().includes("completed"))
-      ) {
-        contactsByDate[day].demoRequested += 1;
-      } else {
-        contactsByDate[day].demoNo += 1;
-      }
-
-      // Normalize language value to avoid case-sensitive duplicates
-      let language = normalizeLanguage(contact.language);
-
-      if (!languageCount[language]) {
-        languageCount[language] = 0;
-      }
-      languageCount[language] += 1;
-
-      if (!contactsByDate[day][language]) {
-        contactsByDate[day][language] = 0;
-      }
-      contactsByDate[day][language] += 1;
-    });
-
     const sortedLanguages = Object.entries(languageCount)
       .sort(([, a], [, b]) => b - a)
-      .reduce((obj, [key, value]) => {
-        obj[key] = value;
-        return obj;
+      .reduce((o, [k, v]) => {
+        o[k] = v;
+        return o;
       }, {});
 
     const dailyData = Object.values(contactsByDate)
       .sort((a, b) => a.day - b.day)
-      .map((day) => {
+      .map((dayObj) => {
         const processedDay = {
-          ...day,
-          // Sales conversion rate per day = salesForDay / totalContacts
+          ...dayObj,
           conversionRate:
-            day.totalContacts > 0
-              ? ((salesByDate[day.day] || 0) / day.totalContacts) * 100
+            dayObj.totalContacts > 0
+              ? ((salesByDate[dayObj.day] || 0) / dayObj.totalContacts) * 100
               : 0,
-          // show demoCompleted for chart parity
-          demoCompleted: day.totalContacts,
+          demoCompleted: dayObj.demoCompleted,
         };
-
         Object.keys(sortedLanguages).forEach((lang) => {
-          if (!processedDay[lang]) {
-            processedDay[lang] = 0;
-          }
+          if (!processedDay[lang]) processedDay[lang] = 0;
         });
-
         return processedDay;
       });
 
     const boardCount = {};
     const gradeCount = {};
     const statusCount = {};
-
     filteredContacts.forEach((contact) => {
       const board = contact.board || "Not provided";
       boardCount[board] = (boardCount[board] || 0) + 1;
-
       const grade = contact.grade || "Not provided";
       gradeCount[grade] = (gradeCount[grade] || 0) + 1;
-
       const status = contact.status || "Not provided";
       statusCount[status] = (statusCount[status] || 0) + 1;
     });
@@ -484,7 +491,7 @@ export default function SignupAnalyticsDashboard({
       demoRequested,
       demoCompleted,
       demoDeclined,
-      demoNo: demoDeclined, // Keep for backward compatibility
+      demoNo: demoDeclined,
       salesCount,
       salesByAssignee,
       assignedContacts,
@@ -505,14 +512,12 @@ export default function SignupAnalyticsDashboard({
     };
   }, [stats, selectedAssignee, conversionStats]);
 
-  // Get unique assignees from data
   const assignees = useMemo(() => {
     if (!stats || !stats.contacts)
       return ["All", selectedAssignee].filter(Boolean);
     const uniqueAssignees = [
       ...new Set(stats.contacts.map((c) => c.assignedTo).filter(Boolean)),
     ];
-    // Ensure the current selection is present as an option
     if (
       selectedAssignee &&
       selectedAssignee !== "All" &&
@@ -523,37 +528,21 @@ export default function SignupAnalyticsDashboard({
     return ["All", ...uniqueAssignees.sort()];
   }, [stats, selectedAssignee]);
 
-  const SimpleStatCard = ({
-    title,
-    value,
-    color = "bg-blue-500",
-    breakdown,
-  }) => {
+  const SimpleStatCard = ({ title, value, className = "" }) => {
     return (
-      <div className="bg-white text-gray-800 p-3 sm:p-4 rounded-lg shadow-lg border border-gray-200 min-h-20 sm:min-h-24 flex flex-col justify-center">
-        <div className="flex items-center justify-between mb-1 sm:mb-2">
-          <h3 className="text-xs sm:text-sm font-medium text-gray-600">
-            {title}
-          </h3>
-        </div>
-        <div className="text-lg sm:text-2xl font-bold mb-1">
+      <div
+        className={`bg-white text-gray-800 p-3 rounded-lg shadow-md border border-gray-200 ${className}`}
+      >
+        <h3 className="text-xs font-medium mb-1 text-gray-600 uppercase">
+          {title}
+        </h3>
+        <div className="text-xl font-bold">
           {typeof value === "number" ? value.toLocaleString() : value}
         </div>
-        {breakdown && (
-          <div className="text-xs text-gray-500 space-y-0.5">
-            {breakdown.map((item, index) => (
-              <div key={index} className="flex justify-between">
-                <span>{item.label}</span>
-                <span className="font-medium">{item.value}</span>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     );
   };
 
-  // OPTIMIZED: Show skeleton instead of spinner when data exists but loading
   const LoadingState = () => {
     if (stats && loading) {
       return (
@@ -649,7 +638,6 @@ export default function SignupAnalyticsDashboard({
         </div>
       </div>
 
-      {/* Show loading overlay when refreshing data */}
       <div className={`${loading && stats ? "relative" : ""}`}>
         {loading && stats && (
           <div className="absolute top-0 right-0 z-10 bg-blue-50 px-3 py-1 rounded-bl-lg border-l border-b border-blue-200">
@@ -659,47 +647,28 @@ export default function SignupAnalyticsDashboard({
             </div>
           </div>
         )}
-        
-        {/* Top 6 Cards Row - Main Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 sm:gap-4 mb-6">
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
           <SimpleStatCard
             title="TOTAL CONTACTS"
             value={processedData.totalContacts}
-            breakdown={[
-              { label: "Assigned", value: processedData.assignedContacts },
-              { label: "Unassigned", value: processedData.unassignedContacts },
-            ]}
-            color="bg-blue-500"
           />
           <SimpleStatCard
             title="DEMO REQUEST"
             value={processedData.demoRequested}
-            color="bg-green-500"
           />
           <SimpleStatCard
             title="DEMO COMPLETE"
             value={processedData.demoCompleted}
-            color="bg-emerald-500"
           />
           <SimpleStatCard
             title="DEMO DECLINED"
             value={processedData.demoDeclined}
-            color="bg-red-500"
           />
-          <SimpleStatCard
-            title="SALES"
-            value={processedData.salesCount}
-            color="bg-yellow-500"
-          />
-          <SimpleStatCard
-            title="CONVERSION RATE"
-            value={`${processedData.conversionRate}%`}
-            color="bg-purple-500"
-          />
+          <SimpleStatCard title="SALES" value={processedData.salesCount} />
         </div>
 
-        {/* KPI Rates Row - New line with 3 tiles */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 sm:gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
           <SimpleStatCard
             title="Demo Completion Rate"
             value={`${processedData.demoCompletionRate}%`}
@@ -714,14 +683,12 @@ export default function SignupAnalyticsDashboard({
           />
         </div>
 
-        {/* AI Recommendation Cards */}
         <AIRecommendationCards
           dashboardType="freesignup"
           data={processedData}
           month={selectedMonth}
         />
 
-        {/* Two Charts Side by Side */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-lg shadow-lg">
             <h3 className="text-lg font-semibold mb-4 text-gray-800">
@@ -796,7 +763,6 @@ export default function SignupAnalyticsDashboard({
         </div>
       </div>
 
-      {/* Metadata */}
       {stats?.metadata && (
         <div className="mt-6 text-xs text-gray-500 flex justify-between">
           <span>

@@ -617,14 +617,12 @@ export default function WhatsAppDashboard({
       )
     : 0;
 
-  // Calculate most used language
-  const mostUsedLanguage = Object.keys(processedData.languages)[0] || "Other";
-  const mostUsedCount = processedData.languages[mostUsedLanguage] || 0;
+  // Removed language card, so no need to calculate most used language here.
 
   return (
     <div className="p-4 bg-gray-100 min-h-screen">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
+      <div className="flex items-center justify-between mb-4 gap-3">
         <div className="flex items-center gap-3">
           {!hideNavButtons && (
             <button
@@ -657,6 +655,8 @@ export default function WhatsAppDashboard({
               )}
             </button>
           )}
+        </div>
+        <div>
           <select
             value={month}
             onChange={(e) => {
@@ -723,15 +723,6 @@ export default function WhatsAppDashboard({
                 : "No Data"
             }
             className={!demoStatusData ? "text-gray-500" : ""}
-          />
-          <StatCard
-            title={`${mostUsedLanguage} Users`}
-            value={`${mostUsedCount} (${Math.round(
-              (mostUsedCount / processedData.totalContacts) * 100
-            )}%)`}
-            isCritical={
-              !!demoStatusData && processedData.demoConversionRate < 5
-            }
           />
           <StatCard
             title="Free Signups"

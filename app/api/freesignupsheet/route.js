@@ -1,4 +1,3 @@
-// app/api/freesignupsheet/route.js
 import { NextResponse } from "next/server";
 import { GoogleSpreadsheet } from "google-spreadsheet";
 import { JWT } from "google-auth-library";
@@ -15,15 +14,10 @@ function getServiceAccount() {
       "Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_PRIVATE_KEY"
     );
   }
-  // replace escaped newlines (common in env files)
   private_key = private_key.replace(/\\n/g, "\n");
   return { client_email, private_key };
 }
 
-/**
- * parseSheetDate
- * Accepts sheet titles like "01-08-2025" or "1-8-2025" and returns a Date or null
- */
 const parseSheetDate = (sheetName) => {
   try {
     const parts = sheetName.trim().split("-");
@@ -40,18 +34,12 @@ const parseSheetDate = (sheetName) => {
   }
 };
 
-/**
- * formatTimestamp
- * Try to parse different timestamp formats and return ISO string or null (if unparseable)
- */
 const formatTimestamp = (ts) => {
   if (!ts) return null;
   try {
-    // Try direct JS parse first
     let d = new Date(ts);
     if (!isNaN(d.getTime())) return d.toISOString();
 
-    // Try dd-mm-yyyy [HH:mm[:ss]] formats
     const parts = ts.toString().trim().split(" ");
     const datePart = parts[0];
     const timePart = parts.slice(1).join(" ") || "00:00:00";
@@ -60,21 +48,18 @@ const formatTimestamp = (ts) => {
       const day = dparts[0].padStart(2, "0");
       const month = dparts[1].padStart(2, "0");
       const year = dparts[2];
-      // ensure time is in hh:mm:ss (if only hh:mm provided, append :00)
       const normTime =
         timePart.split(":").length === 2 ? `${timePart}:00` : timePart;
       d = new Date(`${year}-${month}-${day}T${normTime}`);
       if (!isNaN(d.getTime())) return d.toISOString();
     }
 
-    // unparseable
     return null;
   } catch {
     return null;
   }
 };
 
-// Generic aggregator helper for stats
 const countBy = (arr, keyFn) => {
   const counts = {};
   arr.forEach((r) => {
@@ -103,6 +88,7 @@ const processSheetRows = (rows) => {
         status: {},
         sources: {},
         demoStatus: {},
+        demoRequested: {},
         currentStatus: {},
         salesOwners: {},
         assignedTo: {},
@@ -116,7 +102,18 @@ const processSheetRows = (rows) => {
   const grades = countBy(rows, (r) => r.get("Grade"));
   const status = countBy(rows, (r) => r.get("Status"));
   const sources = countBy(rows, (r) => r.get("Source") || r.get("Lead Source"));
-  const demoStatus = countBy(rows, (r) => r.get("Demo Status"));
+  const demoStatus = countBy(
+    rows,
+    (r) => r.get("Demo Status") || r.get("DemoStatus")
+  );
+  const demoRequested = countBy(
+    rows,
+    (r) =>
+      r.get("Demo Requested") ||
+      r.get("Demo Request") ||
+      r.get("DemoRequested") ||
+      r.get("Demo Request?")
+  );
   const currentStatus = countBy(rows, (r) => r.get("Current Status"));
   const salesOwners = countBy(rows, (r) => r.get("Sales Owner"));
   const assignedToCounts = countBy(rows, (r) => r.get("Assigned To"));
@@ -131,6 +128,10 @@ const processSheetRows = (rows) => {
       { label: "Unique Grades", value: Object.keys(grades).length },
       { label: "Unique Sources", value: Object.keys(sources).length },
       { label: "Unique Demo Statuses", value: Object.keys(demoStatus).length },
+      {
+        label: "Unique Demo Requests",
+        value: Object.keys(demoRequested).length,
+      },
       {
         label: "Unique Current Statuses",
         value: Object.keys(currentStatus).length,
@@ -148,6 +149,7 @@ const processSheetRows = (rows) => {
       status,
       sources,
       demoStatus,
+      demoRequested,
       currentStatus,
       salesOwners,
       assignedTo: assignedToCounts,
@@ -162,10 +164,10 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const spreadsheetId = searchParams.get("spreadsheetId");
     const dateRangeParam = searchParams.get("dateRange") || "7";
-    const specificDate = searchParams.get("date"); // DD-MM-YYYY
-    const monthParam = searchParams.get("month"); // numeric month (1-12)
-    const yearParam = searchParams.get("year"); // numeric year
-    const monthYearParam = searchParams.get("monthYear"); // "MM-YYYY" or "M-YYYY"
+    const specificDate = searchParams.get("date");
+    const monthParam = searchParams.get("month");
+    const yearParam = searchParams.get("year");
+    const monthYearParam = searchParams.get("monthYear");
     const debug = searchParams.get("debug") === "1";
     const fieldsParam = searchParams.get("fields");
     const fields = fieldsParam
@@ -202,7 +204,6 @@ export async function GET(request) {
       );
     }
 
-    // Try cache first
     const cacheKey = makeCacheKey([
       "freesignupsheet",
       spreadsheetId,
@@ -216,17 +217,13 @@ export async function GET(request) {
     const cached = getCache(cacheKey);
     if (cached) return NextResponse.json(cached);
 
-    // Acquire service account credentials
     const { client_email, private_key } = getServiceAccount();
 
-    // Create doc and authenticate
     let doc = new GoogleSpreadsheet(spreadsheetId);
     try {
-      // prefer useServiceAccountAuth if available
       if (typeof doc.useServiceAccountAuth === "function") {
         await doc.useServiceAccountAuth({ client_email, private_key });
       } else {
-        // fallback to JWT + oauth attachment (older/newer lib variants)
         const jwtClient = new JWT({
           email: client_email,
           key: private_key,
@@ -239,7 +236,6 @@ export async function GET(request) {
         if (typeof doc.useOAuth2Client === "function") {
           await doc.useOAuth2Client(jwtClient);
         } else {
-          // last fallback: recreate with auth object in constructor (some versions accept second arg)
           doc = new GoogleSpreadsheet(spreadsheetId, jwtClient);
         }
       }
@@ -252,19 +248,16 @@ export async function GET(request) {
       );
     }
 
-    // collect sheets that look like dates
     const allSheets = Object.values(doc.sheetsByTitle || {});
     const dateSheets = allSheets
       .map((s) => ({ sheet: s, date: parseSheetDate(s.title) }))
       .filter((x) => x.date !== null);
 
-    // decide which sheet titles to process
     let targetTitles = [];
 
     if (specificDate) {
       targetTitles = [specificDate];
     } else if (monthYearParam) {
-      // monthYearParam like "09-2025" or "9-2025"
       const parts = monthYearParam.split("-");
       const mon = parseInt(parts[0], 10);
       const yr = parseInt(parts[1], 10);
@@ -306,7 +299,6 @@ export async function GET(request) {
         .map((s) => s.sheet.title);
     }
 
-    // Helper with retry/backoff for quota errors
     const getRowsWithRetry = async (sheet) => {
       let attempt = 0;
       let delayMs = initialDelayMs;
@@ -334,7 +326,6 @@ export async function GET(request) {
       }
     };
 
-    // load rows from target sheets
     let allRows = [];
     const processedSheets = [];
     for (const title of targetTitles) {
@@ -357,14 +348,12 @@ export async function GET(request) {
           console.error(`Error loading sheet ${title}:`, err);
         }
       }
-      // inter-sheet delay with jitter to avoid bursts
       const jitter = Math.floor(
         Math.random() * Math.max(1, Math.floor(jitterMs / 2))
       );
       await new Promise((r) => setTimeout(r, sheetDelayMs + jitter));
     }
 
-    // fallback: if nothing matched and dateSheets exist, take most recent N
     if (
       allRows.length === 0 &&
       dateSheets.length > 0 &&
@@ -398,7 +387,6 @@ export async function GET(request) {
       }
     }
 
-    // sort by timestamp and dedupe by phone (keep latest)
     const rowsWithDates = allRows.map((r) => {
       const rawTs =
         r.get("Timestamp") ||
@@ -431,7 +419,7 @@ export async function GET(request) {
       }
     }
 
-    // build contacts with ALL columns including the new ones
+    // build contacts with ALL columns including demoRequested variants
     const contactsAll = uniqueRows.map((it) => {
       const r = it.row;
       return {
@@ -457,8 +445,26 @@ export async function GET(request) {
         status: r.get("Status") || "",
         leadSource: r.get("Source") || r.get("Lead Source") || "",
         currentStatus: r.get("Current Status") || "",
-        demoDate: r.get("Demo Date") || "",
-        demoStatus: r.get("Demo Status") || "",
+        demoDate:
+          r.get("Demo Date") || r.get("Demo_Date") || r.get("DemoDate") || "",
+        // IMPORTANT: include demoRequested field with many header variants
+        demoRequested:
+          r.get("Demo Requested") ||
+          r.get("Demo requested") ||
+          r.get("Demo Request") ||
+          r.get("DemoRequested") ||
+          r.get("Demo Request?") ||
+          r.get("Demo Request (Yes/No)") ||
+          r.get("demo_requested") ||
+          r.get("demoRequest") ||
+          "",
+        // demoStatus with variants
+        demoStatus:
+          r.get("Demo Status") ||
+          r.get("DemoStatus") ||
+          r.get("Demo Status (Yes/No)") ||
+          r.get("Demo_Status") ||
+          "",
         followUpDay1:
           r.get("Follow-up day-1") ||
           r.get("Follow up day-1") ||
@@ -484,7 +490,6 @@ export async function GET(request) {
         })
       : contactsAll;
 
-    // compute stats from uniqueRows (pass raw row objects)
     const stats = processSheetRows(uniqueRows.map((it) => it.row));
 
     const availableSheetNames = dateSheets

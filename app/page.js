@@ -56,7 +56,7 @@ export default function Page() {
     return (
       <div className="space-y-4">
         <div className="flex flex-wrap gap-2">
-          <SubTabButton id="whatsapp" label="WhatsApp Dashboard" />
+          <SubTabButton id="whatsapp" label="Total Leads" />
           <SubTabButton id="signup" label="Free Signup" />
           <SubTabButton id="compare" label="Compare" />
         </div>
